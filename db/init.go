@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"wxcloudrun-golang/db/model"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -49,6 +50,23 @@ func Init() error {
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	dbInstance = db
+
+	if err := db.AutoMigrate(
+		&model.CounterModel{},
+		&model.Category{},
+		&model.MenuItem{},
+		&model.Order{},
+		&model.OrderItem{},
+		&model.WorkOrder{},
+	); err != nil {
+		fmt.Println("DB AutoMigrate error,err=", err.Error())
+		return err
+	}
+
+	if err := seedInitialData(db); err != nil {
+		fmt.Println("DB Seed error,err=", err.Error())
+		return err
+	}
 
 	fmt.Println("finish init mysql with ", source)
 	return nil
