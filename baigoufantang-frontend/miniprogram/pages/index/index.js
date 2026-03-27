@@ -22,6 +22,12 @@ const ORDER_RECORD_TABS = [
   { key: "recent", label: "最近10条" },
   { key: "all", label: "全部记录" },
 ];
+const ADMIN_PANEL_TABS = [
+  { key: "notice", label: "通知" },
+  { key: "category", label: "分类" },
+  { key: "menu", label: "菜品" },
+  { key: "workorders", label: "工单" },
+];
 
 const DEFAULT_DATE_OPTIONS = buildNextSevenDays();
 const DEFAULT_SELECTED_DATE = DEFAULT_DATE_OPTIONS.length
@@ -474,7 +480,6 @@ Page({
     syncing: false,
     loginBusy: false,
     activeTab: "booking",
-    activeTabIndex: 0,
     loggedIn: false,
     loginError: "",
     viewerAvatarPreviewUrl: DEFAULT_AVATAR,
@@ -523,6 +528,8 @@ Page({
     myOrders: [],
     workOrders: [],
     adminLoaded: false,
+    adminPanel: "notice",
+    adminPanelTabs: ADMIN_PANEL_TABS,
     categoryEditingId: 0,
     categoryName: "",
     categorySort: "10",
@@ -713,7 +720,6 @@ Page({
       if (!this.data.isAdmin && this.data.activeTab === "admin") {
         this.setData({
           activeTab: "booking",
-          activeTabIndex: 0,
         });
       }
 
@@ -985,7 +991,7 @@ Page({
     if (tab === this.data.activeTab) {
       return;
     }
-    if (tab === "admin" && !this.data.isAdmin) {
+    if (this.getAvailableTabs().indexOf(tab) === -1) {
       return;
     }
 
@@ -998,11 +1004,23 @@ Page({
     }
   },
 
+  onSwitchAdminPanel(event) {
+    this.setData({
+      adminPanel: event.currentTarget.dataset.tab,
+    });
+  },
+
+  getAvailableTabs() {
+    const tabs = ["booking", "orders"];
+    if (this.data.isAdmin) {
+      tabs.push("admin");
+    }
+    return tabs;
+  },
+
   setActiveTab(tab) {
-    const nextIndex = tab === "admin" && this.data.isAdmin ? 1 : 0;
     this.setData({
       activeTab: tab,
-      activeTabIndex: nextIndex,
     });
   },
 
@@ -1016,7 +1034,8 @@ Page({
   },
 
   onPageTouchEnd(event) {
-    if (!this.data.isAdmin) {
+    const tabs = this.getAvailableTabs();
+    if (tabs.length < 2) {
       return;
     }
 
@@ -1034,18 +1053,22 @@ Page({
       return;
     }
 
-    if (deltaX < 0 && this.data.activeTab === "booking") {
-      this.setActiveTab("admin");
-      if (!this.data.adminLoaded) {
-        this.reloadAdminData().catch((error) => {
-          this.showError(error);
-        });
-      }
+    const currentIndex = tabs.indexOf(this.data.activeTab);
+    if (currentIndex < 0) {
       return;
     }
 
-    if (deltaX > 0 && this.data.activeTab === "admin") {
-      this.setActiveTab("booking");
+    const nextIndex = deltaX < 0 ? currentIndex + 1 : currentIndex - 1;
+    if (nextIndex < 0 || nextIndex >= tabs.length) {
+      return;
+    }
+
+    const nextTab = tabs[nextIndex];
+    this.setActiveTab(nextTab);
+    if (nextTab === "admin" && !this.data.adminLoaded) {
+      this.reloadAdminData().catch((error) => {
+        this.showError(error);
+      });
     }
   },
 
@@ -1316,6 +1339,7 @@ Page({
     }
 
     this.setData({
+      adminPanel: "category",
       categoryEditingId: category.id,
       categoryName: category.name,
       categorySort: `${category.sort || 10}`,
@@ -1418,6 +1442,7 @@ Page({
     const category = this.data.menuCategoryOptions[nextIndex] || null;
 
     this.setData({
+      adminPanel: "menu",
       menuEditingId: menuItem.id,
       menuName: menuItem.name,
       menuDescription: menuItem.description,

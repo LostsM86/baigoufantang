@@ -589,6 +589,43 @@ page {
   margin-top: 18rpx;
 }
 
+.admin-layout {
+  display: flex;
+  gap: 18rpx;
+  align-items: flex-start;
+}
+
+.admin-layout__nav {
+  width: 146rpx;
+  flex: 0 0 auto;
+  padding: 12rpx;
+  border-radius: 24rpx;
+  background: #f6efe6;
+}
+
+.admin-layout__nav-item {
+  padding: 18rpx 12rpx;
+  border-radius: 18rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #8b7562;
+}
+
+.admin-layout__nav-item + .admin-layout__nav-item {
+  margin-top: 10rpx;
+}
+
+.admin-layout__nav-item--active {
+  background: #d61f26;
+  color: #fff;
+  font-weight: 700;
+}
+
+.admin-layout__content {
+  flex: 1;
+  min-width: 0;
+}
+
 .admin-card__head,
 .admin-row,
 .admin-row__actions,

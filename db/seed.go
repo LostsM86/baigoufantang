@@ -33,11 +33,11 @@ func seedInitialData(database *gorm.DB) error {
 			},
 		},
 		{
-			Name: "正餐",
+			Name: "炒菜",
 			Sort: 20,
 			Items: []seedMenuItem{
-				{CategoryName: "正餐", Name: "辣椒炒肉", Price: 0, MealSlots: []string{"lunch", "dinner"}, Sort: 10},
-				{CategoryName: "正餐", Name: "炒蕨菜", Price: 0, MealSlots: []string{"lunch", "dinner"}, Sort: 20},
+				{CategoryName: "炒菜", Name: "辣椒炒肉", Price: 0, MealSlots: []string{"lunch", "dinner"}, Sort: 10},
+				{CategoryName: "炒菜", Name: "炒蕨菜", Price: 0, MealSlots: []string{"lunch", "dinner"}, Sort: 20},
 			},
 		},
 		{
