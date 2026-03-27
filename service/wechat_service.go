@@ -75,6 +75,7 @@ type orderNotificationPayload struct {
 	MealDate       string
 	MealSlot       string
 	MealLabel      string
+	ServeTime      string
 	RequesterLabel string
 	Remark         string
 	ItemSummary    string
@@ -367,6 +368,7 @@ func renderNotificationTemplate(template string, payload orderNotificationPayloa
 		"{{meal_date}}":       payload.MealDate,
 		"{{meal_slot}}":       payload.MealSlot,
 		"{{meal_label}}":      payload.MealLabel,
+		"{{serve_time}}":      payload.ServeTime,
 		"{{requester_label}}": payload.RequesterLabel,
 		"{{remark}}":          emptyFallback(payload.Remark, "无备注"),
 		"{{item_summary}}":    emptyFallback(payload.ItemSummary, "订单详情请进小程序查看"),

@@ -95,15 +95,15 @@ page {
 
 .profile-card__body {
   display: flex;
-  flex-wrap: wrap;
-  gap: 20rpx;
+  flex-direction: column;
+  gap: 18rpx;
   margin-top: 18rpx;
 }
 
 .profile-card__avatar-btn {
-  width: 200rpx;
+  width: 100%;
   margin: 0;
-  padding: 18rpx 16rpx;
+  padding: 18rpx 16rpx 22rpx;
   border: 0;
   border-radius: 24rpx;
   background: #f7f3ed;
@@ -129,8 +129,7 @@ page {
 }
 
 .profile-card__form {
-  flex: 1 1 320rpx;
-  min-width: 0;
+  width: 100%;
 }
 
 .profile-card__input {
@@ -580,26 +579,28 @@ page {
 }
 
 .admin-form-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16rpx;
+  display: block;
 }
 
 .admin-image-panel {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 18rpx;
   margin-top: 18rpx;
 }
 
 .admin-image-panel__preview,
 .admin-menu-item__image {
-  width: 108rpx;
-  height: 108rpx;
+  width: 140rpx;
+  height: 140rpx;
   border-radius: 20rpx;
   background: #f4eee6;
   flex: 0 0 auto;
+}
+
+.admin-image-panel__preview {
+  margin: 0 auto;
 }
 
 .admin-input,
@@ -615,9 +616,7 @@ page {
 }
 
 .admin-input--half {
-  flex: 1 1 280rpx;
-  width: auto;
-  min-width: 0;
+  width: 100%;
 }
 
 .admin-textarea {
@@ -684,9 +683,9 @@ page {
 }
 
 .admin-row__actions {
-  flex: 0 0 auto;
+  width: 100%;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .admin-checkbox {

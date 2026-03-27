@@ -848,6 +848,7 @@ func createOrders(requesterID string, req createBatchOrderRequest) error {
 				MealDate:       entry.MealDate,
 				MealSlot:       entry.MealSlot,
 				MealLabel:      mealLabel(entry.MealSlot),
+				ServeTime:      buildServeTime(entry.MealDate, entry.MealSlot),
 				RequesterLabel: requesterLabel,
 				Remark:         req.Remark,
 				ItemSummary:    buildOrderItemSummary(entry.Items, menuItemsMap),
@@ -993,6 +994,7 @@ func reviewOrder(req adminOrderActionRequest) error {
 			MealDate:       order.MealDate,
 			MealSlot:       order.MealSlot,
 			MealLabel:      mealLabel(order.MealSlot),
+			ServeTime:      buildServeTime(order.MealDate, order.MealSlot),
 			RequesterLabel: order.UserName,
 			Remark:         order.Remark,
 			ItemSummary:    strings.Join(itemParts, "、"),
@@ -1281,6 +1283,21 @@ func orderStatusLabel(status string) string {
 		return "已撤销"
 	default:
 		return status
+	}
+}
+
+func buildServeTime(mealDate, mealSlot string) string {
+	switch mealSlot {
+	case "breakfast":
+		return mealDate + " 08:30"
+	case "lunch":
+		return mealDate + " 12:00"
+	case "dinner":
+		return mealDate + " 18:00"
+	case "night_snack":
+		return mealDate + " 22:30"
+	default:
+		return mealDate + " 12:00"
 	}
 }
 

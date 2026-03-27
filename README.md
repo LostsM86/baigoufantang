@@ -111,15 +111,13 @@ PORT=8080 go run .
 
 ```json
 {
-  "thing1": { "value": "白狗饭堂有新订单" },
-  "character_string2": { "value": "{{order_no}}" },
-  "thing3": { "value": "{{requester_label}}" },
-  "thing4": { "value": "{{meal_date}} {{meal_label}}" },
-  "thing5": { "value": "{{item_summary}}" }
+  "thing1": { "value": "{{item_summary}}" },
+  "thing4": { "value": "{{remark}}" },
+  "time5": { "value": "{{serve_time}}" }
 }
 ```
 
-注意：这里的 `thing1`、`character_string2` 这类 key，必须和你在微信公众平台选用的订阅消息模板关键词完全一致。
+注意：这里的 `thing1`、`time5` 这类 key，必须和你在微信公众平台选用的订阅消息模板关键词完全一致。
 
 ## 已验证
 

@@ -26,7 +26,7 @@
     <view class="profile-card">
       <view class="profile-card__head">
         <view class="admin-card__title">我的资料</view>
-        <view class="admin-tip">昵称和头像会展示在订单和管理页面里，不再用 openid 尾号代替。</view>
+        <view class="admin-tip">昵称和头像会展示在订单和管理页面里，不再用 openid 尾号代替。昵称这里改成手动填写，兼容性更稳。</view>
       </view>
       <view class="profile-card__body">
         <button class="profile-card__avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseProfileAvatar">
@@ -34,7 +34,7 @@
           <view class="profile-card__avatar-tip">更换头像</view>
         </button>
         <view class="profile-card__form">
-          <input class="admin-input profile-card__input" type="nickname" placeholder="请输入昵称" value="{{profileDisplayName}}" data-field="profileDisplayName" bindinput="onInputChange" bindblur="onInputChange" />
+          <input class="admin-input profile-card__input" placeholder="请输入昵称" value="{{profileDisplayName}}" data-field="profileDisplayName" bindinput="onInputChange" bindblur="onInputChange" />
           <button class="minor-button" size="mini" bindtap="saveProfile">保存资料</button>
         </view>
       </view>
