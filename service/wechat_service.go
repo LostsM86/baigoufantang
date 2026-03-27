@@ -79,6 +79,9 @@ type orderNotificationPayload struct {
 	Remark         string
 	ItemSummary    string
 	TotalQuantity  int
+	Status         string
+	StatusLabel    string
+	RejectReason   string
 	CreatedAt      time.Time
 }
 
@@ -230,22 +233,36 @@ func sessionTokenSecret() string {
 	return strings.TrimSpace(os.Getenv("WECHAT_APP_SECRET"))
 }
 
-func adminNotificationEnabled() bool {
+func templateNotificationEnabled(prefix string) bool {
 	return strings.TrimSpace(os.Getenv("WECHAT_APP_ID")) != "" &&
 		strings.TrimSpace(os.Getenv("WECHAT_APP_SECRET")) != "" &&
-		strings.TrimSpace(os.Getenv("ADMIN_NOTIFY_TEMPLATE_ID")) != "" &&
-		strings.TrimSpace(os.Getenv("ADMIN_NOTIFY_TEMPLATE_DATA")) != "" &&
-		len(adminOpenIDs()) > 0
+		strings.TrimSpace(os.Getenv(prefix+"_TEMPLATE_ID")) != "" &&
+		strings.TrimSpace(os.Getenv(prefix+"_TEMPLATE_DATA")) != ""
 }
 
-func buildAdminNotificationConfig(requesterID string) adminNotificationDTO {
+func adminNotificationEnabled() bool {
+	return templateNotificationEnabled("ADMIN_NOTIFY") && len(adminOpenIDs()) > 0
+}
+
+func buildAdminNotificationConfig(requesterID string) notificationConfigDTO {
 	if !isAdminRequester(requesterID) || !adminNotificationEnabled() {
-		return adminNotificationDTO{}
+		return notificationConfigDTO{}
 	}
 
-	return adminNotificationDTO{
+	return notificationConfigDTO{
 		Enabled:             true,
 		SubscribeTemplateID: strings.TrimSpace(os.Getenv("ADMIN_NOTIFY_TEMPLATE_ID")),
+	}
+}
+
+func buildOrderNotificationConfig(requesterID string) notificationConfigDTO {
+	if strings.TrimSpace(requesterID) == "" || !templateNotificationEnabled("ORDER_NOTIFY") {
+		return notificationConfigDTO{}
+	}
+
+	return notificationConfigDTO{
+		Enabled:             true,
+		SubscribeTemplateID: strings.TrimSpace(os.Getenv("ORDER_NOTIFY_TEMPLATE_ID")),
 	}
 }
 
@@ -255,39 +272,54 @@ func notifyAdminsForNewOrders(payloads []orderNotificationPayload) {
 	}
 
 	for _, payload := range payloads {
-		if err := sendAdminNotification(payload); err != nil {
+		if err := sendTemplatedNotifications(adminOpenIDs(), "ADMIN_NOTIFY", payload); err != nil {
 			log.Printf("send admin notification failed for order %s: %v", payload.OrderNo, err)
 		}
 	}
 }
 
-func sendAdminNotification(payload orderNotificationPayload) error {
+func notifyRequesterOrderStatus(requesterID string, payload orderNotificationPayload) {
+	requesterID = strings.TrimSpace(requesterID)
+	if requesterID == "" || !templateNotificationEnabled("ORDER_NOTIFY") {
+		return
+	}
+
+	if err := sendTemplatedNotifications([]string{requesterID}, "ORDER_NOTIFY", payload); err != nil {
+		log.Printf("send requester notification failed for order %s: %v", payload.OrderNo, err)
+	}
+}
+
+func sendTemplatedNotifications(recipients []string, prefix string, payload orderNotificationPayload) error {
+	if len(recipients) == 0 {
+		return nil
+	}
+
 	accessToken, err := getWechatAccessToken()
 	if err != nil {
 		return err
 	}
 
-	templateID := strings.TrimSpace(os.Getenv("ADMIN_NOTIFY_TEMPLATE_ID"))
-	data, err := renderAdminNotificationData(payload)
+	templateID := strings.TrimSpace(os.Getenv(prefix + "_TEMPLATE_ID"))
+	data, err := renderNotificationData(prefix, payload)
 	if err != nil {
 		return err
 	}
 
 	page := renderNotificationTemplate(
-		strings.TrimSpace(os.Getenv("ADMIN_NOTIFY_PAGE")),
+		strings.TrimSpace(os.Getenv(prefix+"_PAGE")),
 		payload,
 	)
-	miniprogramState := strings.TrimSpace(os.Getenv("ADMIN_NOTIFY_MINIPROGRAM_STATE"))
+	miniprogramState := strings.TrimSpace(os.Getenv(prefix + "_MINIPROGRAM_STATE"))
 	if miniprogramState == "" {
 		miniprogramState = "formal"
 	}
-	lang := strings.TrimSpace(os.Getenv("ADMIN_NOTIFY_LANG"))
+	lang := strings.TrimSpace(os.Getenv(prefix + "_LANG"))
 	if lang == "" {
 		lang = "zh_CN"
 	}
 
 	errMessages := make([]string, 0)
-	for _, openid := range adminOpenIDs() {
+	for _, openid := range recipients {
 		reqBody := subscribeMessageRequest{
 			Touser:           openid,
 			TemplateID:       templateID,
@@ -308,15 +340,15 @@ func sendAdminNotification(payload orderNotificationPayload) error {
 	return nil
 }
 
-func renderAdminNotificationData(payload orderNotificationPayload) (map[string]subscribeMessageDataItem, error) {
-	rawTemplate := strings.TrimSpace(os.Getenv("ADMIN_NOTIFY_TEMPLATE_DATA"))
+func renderNotificationData(prefix string, payload orderNotificationPayload) (map[string]subscribeMessageDataItem, error) {
+	rawTemplate := strings.TrimSpace(os.Getenv(prefix + "_TEMPLATE_DATA"))
 	if rawTemplate == "" {
-		return nil, errors.New("服务端未配置 ADMIN_NOTIFY_TEMPLATE_DATA")
+		return nil, fmt.Errorf("服务端未配置 %s_TEMPLATE_DATA", prefix)
 	}
 
 	var template map[string]subscribeMessageDataItem
 	if err := json.Unmarshal([]byte(rawTemplate), &template); err != nil {
-		return nil, fmt.Errorf("解析 ADMIN_NOTIFY_TEMPLATE_DATA 失败: %w", err)
+		return nil, fmt.Errorf("解析 %s_TEMPLATE_DATA 失败: %w", prefix, err)
 	}
 
 	data := make(map[string]subscribeMessageDataItem, len(template))
@@ -340,6 +372,9 @@ func renderNotificationTemplate(template string, payload orderNotificationPayloa
 		"{{item_summary}}":    emptyFallback(payload.ItemSummary, "订单详情请进小程序查看"),
 		"{{created_at}}":      payload.CreatedAt.Format("2006-01-02 15:04"),
 		"{{total_quantity}}":  strconv.Itoa(payload.TotalQuantity),
+		"{{status}}":          payload.Status,
+		"{{status_label}}":    payload.StatusLabel,
+		"{{reject_reason}}":   emptyFallback(payload.RejectReason, "无"),
 	}
 
 	for placeholder, value := range replacements {

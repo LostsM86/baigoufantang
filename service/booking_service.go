@@ -52,25 +52,28 @@ type dateOption struct {
 type viewerDTO struct {
 	OpenIDMasked string `json:"openidMasked"`
 	IsAdmin      bool   `json:"isAdmin"`
+	DisplayName  string `json:"displayName"`
+	AvatarURL    string `json:"avatarUrl"`
 }
 
 type bootstrapResponse struct {
-	Viewer            viewerDTO            `json:"viewer"`
-	AdminNotification adminNotificationDTO `json:"adminNotification"`
-	MealSlots         []mealSlotOption     `json:"mealSlots"`
-	DateOptions       []dateOption         `json:"dateOptions"`
-	Categories        []categoryDTO        `json:"categories"`
-	MyOrders          []orderDTO           `json:"myOrders"`
+	Viewer            viewerDTO             `json:"viewer"`
+	AdminNotification notificationConfigDTO `json:"adminNotification"`
+	OrderNotification notificationConfigDTO `json:"orderNotification"`
+	MealSlots         []mealSlotOption      `json:"mealSlots"`
+	DateOptions       []dateOption          `json:"dateOptions"`
+	Categories        []categoryDTO         `json:"categories"`
+	MyOrders          []orderDTO            `json:"myOrders"`
 }
 
 type adminBootstrapResponse struct {
-	Viewer            viewerDTO            `json:"viewer"`
-	AdminNotification adminNotificationDTO `json:"adminNotification"`
-	Categories        []categoryDTO        `json:"categories"`
-	WorkOrders        []workOrderDTO       `json:"workOrders"`
+	Viewer            viewerDTO             `json:"viewer"`
+	AdminNotification notificationConfigDTO `json:"adminNotification"`
+	Categories        []categoryDTO         `json:"categories"`
+	WorkOrders        []workOrderDTO        `json:"workOrders"`
 }
 
-type adminNotificationDTO struct {
+type notificationConfigDTO struct {
 	Enabled             bool   `json:"enabled"`
 	SubscribeTemplateID string `json:"subscribeTemplateId"`
 }
@@ -88,6 +91,7 @@ type menuItemDTO struct {
 	CategoryID  uint     `json:"categoryId"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
+	ImageURL    string   `json:"imageUrl"`
 	Price       float64  `json:"price"`
 	MealSlots   []string `json:"mealSlots"`
 	Sort        int      `json:"sort"`
@@ -170,6 +174,7 @@ type adminMenuItemPayload struct {
 	CategoryID  uint     `json:"categoryId"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
+	ImageURL    string   `json:"imageUrl"`
 	Price       float64  `json:"price"`
 	MealSlots   []string `json:"mealSlots"`
 	Sort        int      `json:"sort"`
@@ -180,6 +185,11 @@ type adminOrderActionRequest struct {
 	OrderID uint   `json:"orderId"`
 	Action  string `json:"action"`
 	Reason  string `json:"reason"`
+}
+
+type saveProfileRequest struct {
+	DisplayName string `json:"displayName"`
+	AvatarURL   string `json:"avatarUrl"`
 }
 
 func BootstrapHandler(w http.ResponseWriter, r *http.Request) {
@@ -204,6 +214,7 @@ func BootstrapHandler(w http.ResponseWriter, r *http.Request) {
 	writeData(w, bootstrapResponse{
 		Viewer:            buildViewer(requesterID),
 		AdminNotification: buildAdminNotificationConfig(requesterID),
+		OrderNotification: buildOrderNotificationConfig(requesterID),
 		MealSlots:         mealSlots,
 		DateOptions:       buildNextSevenDays(),
 		Categories:        categories,
@@ -239,6 +250,31 @@ func AdminBootstrapHandler(w http.ResponseWriter, r *http.Request) {
 		Categories:        categories,
 		WorkOrders:        workOrders,
 	})
+}
+
+func ProfileHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, fmt.Errorf("请求方法 %s 不支持", r.Method))
+		return
+	}
+
+	requesterID := getRequesterID(r)
+	if strings.TrimSpace(requesterID) == "" {
+		writeError(w, errors.New("未获取到微信身份，请重新进入小程序后再试"))
+		return
+	}
+
+	var req saveProfileRequest
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := saveUserProfile(requesterID, req); err != nil {
+		writeError(w, err)
+		return
+	}
+
+	writeData(w, buildViewer(requesterID))
 }
 
 func OrderBatchHandler(w http.ResponseWriter, r *http.Request) {
@@ -379,9 +415,22 @@ func decodeBody(r *http.Request, target interface{}) error {
 }
 
 func buildViewer(requesterID string) viewerDTO {
+	displayName := buildRequesterLabel(requesterID)
+	avatarURL := ""
+
+	profile, err := loadUserProfile(requesterID)
+	if err == nil && profile != nil {
+		if strings.TrimSpace(profile.DisplayName) != "" {
+			displayName = strings.TrimSpace(profile.DisplayName)
+		}
+		avatarURL = strings.TrimSpace(profile.AvatarURL)
+	}
+
 	return viewerDTO{
 		OpenIDMasked: maskRequesterID(requesterID),
 		IsAdmin:      isAdminRequester(requesterID),
+		DisplayName:  displayName,
+		AvatarURL:    avatarURL,
 	}
 }
 
@@ -451,9 +500,6 @@ func buildRequesterLabel(requesterID string) string {
 	if requesterID == "" {
 		return "微信用户"
 	}
-	if len(requesterID) > 6 {
-		return fmt.Sprintf("微信用户-%s", requesterID[len(requesterID)-6:])
-	}
 	return "微信用户"
 }
 
@@ -515,6 +561,7 @@ func listCategories(includeDisabled bool) ([]categoryDTO, error) {
 			CategoryID:  item.CategoryID,
 			Name:        item.Name,
 			Description: item.Description,
+			ImageURL:    item.ImageURL,
 			Price:       item.Price,
 			MealSlots:   deserializeMealSlots(item.MealSlots),
 			Sort:        item.Sort,
@@ -740,7 +787,7 @@ func createOrders(requesterID string, req createBatchOrderRequest) error {
 				return fmt.Errorf("%s %s 已存在未完成订单", entry.MealDate, mealLabel(entry.MealSlot))
 			}
 
-			requesterLabel := buildRequesterLabel(requesterID)
+			requesterLabel := resolveRequesterDisplayName(requesterID)
 			createdAt := time.Now()
 			order := model.Order{
 				OrderNo:      generateOrderNo(),
@@ -879,7 +926,10 @@ func reviewOrder(req adminOrderActionRequest) error {
 		return errors.New("当前仅支持 approve / reject")
 	}
 
-	return db.Get().Transaction(func(tx *gorm.DB) error {
+	var notifyPayload orderNotificationPayload
+	var requesterID string
+
+	err := db.Get().Transaction(func(tx *gorm.DB) error {
 		var order model.Order
 		if err := tx.First(&order, req.OrderID).Error; err != nil {
 			return err
@@ -914,10 +964,53 @@ func reviewOrder(req adminOrderActionRequest) error {
 			return err
 		}
 
-		return tx.Model(&model.WorkOrder{}).
+		if err := tx.Model(&model.WorkOrder{}).
 			Where("order_id = ?", order.ID).
-			Updates(updateWorkOrder).Error
+			Updates(updateWorkOrder).Error; err != nil {
+			return err
+		}
+
+		order.Status, _ = updateOrder["status"].(string)
+		if reason, ok := updateOrder["reject_reason"].(string); ok {
+			order.RejectReason = reason
+		}
+
+		orderItemsMap, err := loadOrderItems([]uint{order.ID})
+		if err != nil {
+			return err
+		}
+
+		totalQuantity := 0
+		itemParts := make([]string, 0, len(orderItemsMap[order.ID]))
+		for _, item := range orderItemsMap[order.ID] {
+			totalQuantity += item.Quantity
+			itemParts = append(itemParts, fmt.Sprintf("%s x%d", item.Name, item.Quantity))
+		}
+
+		requesterID = order.RequesterID
+		notifyPayload = orderNotificationPayload{
+			OrderNo:        order.OrderNo,
+			MealDate:       order.MealDate,
+			MealSlot:       order.MealSlot,
+			MealLabel:      mealLabel(order.MealSlot),
+			RequesterLabel: order.UserName,
+			Remark:         order.Remark,
+			ItemSummary:    strings.Join(itemParts, "、"),
+			TotalQuantity:  totalQuantity,
+			Status:         order.Status,
+			StatusLabel:    orderStatusLabel(order.Status),
+			RejectReason:   order.RejectReason,
+			CreatedAt:      order.CreatedAt,
+		}
+
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	notifyRequesterOrderStatus(requesterID, notifyPayload)
+	return nil
 }
 
 func saveCategory(req adminCategoryRequest) error {
@@ -948,15 +1041,73 @@ func saveCategory(req adminCategoryRequest) error {
 	category := model.Category{
 		Name:    req.Category.Name,
 		Sort:    req.Category.Sort,
-		Enabled: true,
+		Enabled: req.Category.Enabled,
 	}
 	return db.Get().Create(&category).Error
+}
+
+func loadUserProfile(requesterID string) (*model.UserProfile, error) {
+	requesterID = strings.TrimSpace(requesterID)
+	if requesterID == "" {
+		return nil, nil
+	}
+
+	var profile model.UserProfile
+	if err := db.Get().Where("requester_id = ?", requesterID).First(&profile).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &profile, nil
+}
+
+func saveUserProfile(requesterID string, req saveProfileRequest) error {
+	req.DisplayName = strings.TrimSpace(req.DisplayName)
+	req.AvatarURL = strings.TrimSpace(req.AvatarURL)
+
+	if req.DisplayName == "" {
+		return errors.New("昵称不能为空")
+	}
+	if len([]rune(req.DisplayName)) > 20 {
+		return errors.New("昵称不能超过 20 个字符")
+	}
+
+	profile, err := loadUserProfile(requesterID)
+	if err != nil {
+		return err
+	}
+
+	if profile == nil {
+		profile = &model.UserProfile{
+			RequesterID: requesterID,
+			DisplayName: req.DisplayName,
+			AvatarURL:   req.AvatarURL,
+		}
+		return db.Get().Create(profile).Error
+	}
+
+	return db.Get().Model(profile).Updates(map[string]interface{}{
+		"display_name": req.DisplayName,
+		"avatar_url":   req.AvatarURL,
+		"updated_at":   time.Now(),
+	}).Error
+}
+
+func resolveRequesterDisplayName(requesterID string) string {
+	profile, err := loadUserProfile(requesterID)
+	if err == nil && profile != nil && strings.TrimSpace(profile.DisplayName) != "" {
+		return strings.TrimSpace(profile.DisplayName)
+	}
+	return buildRequesterLabel(requesterID)
 }
 
 func saveMenuItem(req adminMenuItemRequest) error {
 	req.Action = strings.TrimSpace(req.Action)
 	req.Item.Name = strings.TrimSpace(req.Item.Name)
 	req.Item.Description = strings.TrimSpace(req.Item.Description)
+	req.Item.ImageURL = strings.TrimSpace(req.Item.ImageURL)
 
 	if req.Item.CategoryID == 0 {
 		return errors.New("请选择菜品分类")
@@ -991,6 +1142,7 @@ func saveMenuItem(req adminMenuItemRequest) error {
 				"category_id": req.Item.CategoryID,
 				"name":        req.Item.Name,
 				"description": req.Item.Description,
+				"image_url":   req.Item.ImageURL,
 				"price":       req.Item.Price,
 				"meal_slots":  serializeMealSlots(normalizedMealSlots),
 				"sort":        req.Item.Sort,
@@ -1003,6 +1155,7 @@ func saveMenuItem(req adminMenuItemRequest) error {
 		CategoryID:  req.Item.CategoryID,
 		Name:        req.Item.Name,
 		Description: req.Item.Description,
+		ImageURL:    req.Item.ImageURL,
 		Price:       req.Item.Price,
 		MealSlots:   serializeMealSlots(normalizedMealSlots),
 		Sort:        req.Item.Sort,
@@ -1114,6 +1267,21 @@ func mealLabel(key string) string {
 		return slot.Label
 	}
 	return key
+}
+
+func orderStatusLabel(status string) string {
+	switch status {
+	case orderStatusPending:
+		return "待处理"
+	case orderStatusApproved:
+		return "已受理"
+	case orderStatusRejected:
+		return "已驳回"
+	case orderStatusCancelled:
+		return "已撤销"
+	default:
+		return status
+	}
 }
 
 func generateOrderNo() string {

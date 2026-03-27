@@ -7,6 +7,7 @@ type MenuItem struct {
 	CategoryID  uint      `gorm:"index;not null" json:"categoryId"`
 	Name        string    `gorm:"size:64;not null" json:"name"`
 	Description string    `gorm:"size:255" json:"description"`
+	ImageURL    string    `gorm:"size:512" json:"imageUrl"`
 	Price       float64   `gorm:"type:decimal(10,2);not null;default:0" json:"price"`
 	MealSlots   string    `gorm:"size:128;not null" json:"mealSlots"`
 	Sort        int       `gorm:"not null;default:10" json:"sort"`

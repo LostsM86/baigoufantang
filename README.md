@@ -36,6 +36,8 @@
 - `ADMIN_NOTIFY_MINIPROGRAM_STATE`：消息跳转版本，默认 `formal`
 - `ADMIN_NOTIFY_LANG`：消息语言，默认 `zh_CN`
 - `ADMIN_NOTIFY_TEMPLATE_DATA`：订阅消息数据模板，JSON 字符串
+- `ORDER_NOTIFY_TEMPLATE_ID`：用户订单状态通知模板 ID
+- `ORDER_NOTIFY_TEMPLATE_DATA`：用户订单状态通知模板数据，JSON 字符串
 
 ## 本地启动后端
 
@@ -83,6 +85,13 @@ PORT=8080 go run .
 2. 把模板 ID 配到 `ADMIN_NOTIFY_TEMPLATE_ID`
 3. 把管理员的 `openid` 配到 `ADMIN_OPENIDS`
 4. 管理员本人进入小程序管理页，点击“订阅新订单通知”
+
+用户订单状态通知依赖另一套订阅消息模板：
+
+1. 在微信公众平台选用“订单受理/驳回通知”模板
+2. 配置 `ORDER_NOTIFY_TEMPLATE_ID`
+3. 配置 `ORDER_NOTIFY_TEMPLATE_DATA`
+4. 用户下单时，小程序会顺带请求一次订阅授权
 
 ### `ADMIN_NOTIFY_TEMPLATE_DATA` 格式
 

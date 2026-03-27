@@ -23,9 +23,23 @@ const DEFAULT_DATE_OPTIONS = buildNextSevenDays();
 const DEFAULT_SELECTED_DATE = DEFAULT_DATE_OPTIONS.length
   ? DEFAULT_DATE_OPTIONS[0].date
   : "";
+const DEFAULT_AVATAR = "/images/avatar.png";
+const DEFAULT_GOODS_IMAGE = "/images/default-goods-image.png";
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value || {}));
+}
+
+function chooseImage() {
+  return new Promise((resolve, reject) => {
+    wx.chooseImage({
+      count: 1,
+      sizeType: ["compressed"],
+      sourceType: ["album", "camera"],
+      success: resolve,
+      fail: reject,
+    });
+  });
 }
 
 function pad(num) {
@@ -128,6 +142,8 @@ function normalizeCategories(rawCategories, mealSlots) {
             categoryId: item.categoryId || category.id,
             name: item.name || "",
             description: item.description || "现做现出，支持预约",
+            imageUrl: item.imageUrl || "",
+            displayImageUrl: item.imageUrl || DEFAULT_GOODS_IMAGE,
             price: Number(item.price || 0),
             priceText: formatMoney(item.price || 0),
             enabled: item.enabled !== false,
@@ -162,6 +178,25 @@ function findMenuItem(categories, itemId) {
     }
   }
   return null;
+}
+
+function findCategory(categories, categoryId) {
+  for (let i = 0; i < categories.length; i += 1) {
+    const category = categories[i];
+    if (Number(category.id) === Number(categoryId)) {
+      return category;
+    }
+  }
+  return null;
+}
+
+function findCategoryIndex(categories, categoryId) {
+  for (let i = 0; i < categories.length; i += 1) {
+    if (Number(categories[i].id) === Number(categoryId)) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 function buildDateTabs(dateOptions, selectedDate, slotSelections, myOrders) {
@@ -234,6 +269,8 @@ function buildVisibleCategories(menuCategories, selectedMealSlot, slotSelection)
           categoryId: item.categoryId,
           name: item.name,
           description: item.description,
+          imageUrl: item.imageUrl,
+          displayImageUrl: item.displayImageUrl || DEFAULT_GOODS_IMAGE,
           price: item.price,
           priceText: item.priceText,
           mealSlots: item.mealSlots,
@@ -424,10 +461,16 @@ Page({
     activeTab: "booking",
     loggedIn: false,
     loginError: "",
+    viewerAvatarPreviewUrl: DEFAULT_AVATAR,
+    profileDisplayName: "",
+    profileAvatarUrl: "",
+    profileAvatarPreviewUrl: DEFAULT_AVATAR,
     isAdmin: false,
     viewerLabel: "微信用户",
     adminNotificationEnabled: false,
     adminSubscribeTemplateId: "",
+    orderNotificationEnabled: false,
+    orderSubscribeTemplateId: "",
     mealSlots: DEFAULT_MEAL_SLOTS,
     dateOptions: DEFAULT_DATE_OPTIONS,
     dateTabs: buildDateTabs(
@@ -456,14 +499,20 @@ Page({
     cartSlotCount: 0,
     cartTotalCount: 0,
     cartTotalAmountText: "0.00",
+    orderRemark: "",
     canSubmit: false,
     myOrders: [],
     workOrders: [],
     adminLoaded: false,
+    categoryEditingId: 0,
     categoryName: "",
     categorySort: "10",
+    categoryEnabled: true,
+    menuEditingId: 0,
     menuName: "",
     menuDescription: "",
+    menuImageUrl: "",
+    menuImagePreviewUrl: DEFAULT_GOODS_IMAGE,
     menuPrice: "",
     menuSort: "10",
     menuCategoryIndex: 0,
@@ -472,6 +521,24 @@ Page({
     menuCategoryOptions: [],
     selectedMenuCategoryName: "请先新增分类",
     adminMealSlotChoices: buildAdminMealSlotChoices(DEFAULT_MEAL_SLOTS, []),
+  },
+
+  showPageLoading(title) {
+    if (this.loadingVisible) {
+      return;
+    }
+    this.loadingVisible = true;
+    wx.showLoading({
+      title,
+    });
+  },
+
+  hidePageLoading() {
+    if (!this.loadingVisible) {
+      return;
+    }
+    this.loadingVisible = false;
+    wx.hideLoading();
   },
 
   async onLoad() {
@@ -502,7 +569,7 @@ Page({
         loggedIn: this.app.hasIdentity(),
         loginError: "",
         viewerLabel:
-          (response.viewer && response.viewer.openidMasked) || this.data.viewerLabel,
+          (response.viewer && response.viewer.displayName) || this.data.viewerLabel,
       });
       return response;
     } catch (error) {
@@ -554,10 +621,14 @@ Page({
           ? response.dateOptions
           : buildNextSevenDays();
       const menuCategories = normalizeCategories(response.categories, mealSlots);
+      const assetState = await this.resolveAssetState(
+        menuCategories,
+        response.viewer && response.viewer.avatarUrl
+      );
       const mealSlotMap = getMealSlotMap(mealSlots);
       const myOrders = buildOrderCards(response.myOrders, mealSlotMap);
       const categoryState = buildMenuCategoryState(
-        menuCategories,
+        assetState.menuCategories,
         this.data.menuCategoryIndex
       );
 
@@ -579,7 +650,13 @@ Page({
         loginError: this.app.hasIdentity() ? "" : this.data.loginError,
         isAdmin: !!(response.viewer && response.viewer.isAdmin),
         viewerLabel:
-          (response.viewer && response.viewer.openidMasked) || "微信用户",
+          (response.viewer && response.viewer.displayName) || "微信用户",
+        viewerAvatarPreviewUrl: assetState.avatarPreviewUrl || DEFAULT_AVATAR,
+        profileDisplayName:
+          (response.viewer && response.viewer.displayName) || "",
+        profileAvatarUrl:
+          (response.viewer && response.viewer.avatarUrl) || "",
+        profileAvatarPreviewUrl: assetState.avatarPreviewUrl || DEFAULT_AVATAR,
         adminNotificationEnabled: !!(
           response.adminNotification && response.adminNotification.enabled
         ),
@@ -587,11 +664,18 @@ Page({
           (response.adminNotification &&
             response.adminNotification.subscribeTemplateId) ||
           "",
+        orderNotificationEnabled: !!(
+          response.orderNotification && response.orderNotification.enabled
+        ),
+        orderSubscribeTemplateId:
+          (response.orderNotification &&
+            response.orderNotification.subscribeTemplateId) ||
+          "",
         mealSlots,
         dateOptions,
         selectedDate,
         selectedMealSlot,
-        menuCategories,
+        menuCategories: assetState.menuCategories,
         myOrders,
         menuCategoryOptions: categoryState.options,
         menuCategoryIndex: categoryState.selectedIndex,
@@ -620,13 +704,14 @@ Page({
       path: "/api/admin/bootstrap",
       admin: true,
     });
-    const menuCategories = normalizeCategories(
+    const normalizedCategories = normalizeCategories(
       response.categories,
       this.data.mealSlots
     );
+    const assetState = await this.resolveAssetState(normalizedCategories);
     const mealSlotMap = getMealSlotMap(this.data.mealSlots);
     const categoryState = buildMenuCategoryState(
-      menuCategories,
+      assetState.menuCategories,
       this.data.menuCategoryIndex
     );
 
@@ -639,7 +724,7 @@ Page({
         (response.adminNotification &&
           response.adminNotification.subscribeTemplateId) ||
         "",
-      menuCategories,
+      menuCategories: assetState.menuCategories,
       menuCategoryOptions: categoryState.options,
       menuCategoryIndex: categoryState.selectedIndex,
       selectedMenuCategoryName: categoryState.selectedName,
@@ -722,20 +807,135 @@ Page({
       return;
     }
 
-    wx.showLoading({
-      title: "登录中",
-    });
+    this.showPageLoading("登录中");
     try {
       await this.tryLogin(true);
       await this.reloadPage();
+      this.hidePageLoading();
       wx.showToast({
         title: "登录成功",
         icon: "success",
       });
     } catch (error) {
+      this.hidePageLoading();
+      this.showError(error);
+    }
+  },
+
+  async resolveAssetState(menuCategories, avatarUrl) {
+    const fileIDs = [];
+    (menuCategories || []).forEach((category) => {
+      (category.items || []).forEach((item) => {
+        if (item.imageUrl) {
+          fileIDs.push(item.imageUrl);
+        }
+      });
+    });
+    if (avatarUrl) {
+      fileIDs.push(avatarUrl);
+    }
+
+    const fileUrlMap = await this.app.resolveFileUrls(fileIDs);
+    return {
+      avatarPreviewUrl:
+        (avatarUrl && fileUrlMap[avatarUrl]) || avatarUrl || DEFAULT_AVATAR,
+      menuCategories: (menuCategories || []).map((category) => ({
+        ...category,
+        items: (category.items || []).map((item) => ({
+          ...item,
+          displayImageUrl:
+            (item.imageUrl && fileUrlMap[item.imageUrl]) ||
+            item.imageUrl ||
+            DEFAULT_GOODS_IMAGE,
+        })),
+      })),
+    };
+  },
+
+  async onChooseProfileAvatar(event) {
+    const avatarUrl = event.detail && event.detail.avatarUrl;
+    if (!avatarUrl) {
+      return;
+    }
+
+    this.showPageLoading("上传头像");
+    try {
+      const fileID = await this.app.uploadFileToCloud({
+        filePath: avatarUrl,
+        folder: "user-avatars",
+      });
+      const fileUrlMap = await this.app.resolveFileUrls([fileID]);
+      this.setData({
+        profileAvatarUrl: fileID,
+        profileAvatarPreviewUrl: fileUrlMap[fileID] || avatarUrl,
+      });
+    } catch (error) {
       this.showError(error);
     } finally {
-      wx.hideLoading();
+      this.hidePageLoading();
+    }
+  },
+
+  async saveProfile() {
+    if (!this.data.profileDisplayName.trim()) {
+      wx.showToast({
+        title: "请填写昵称",
+        icon: "none",
+      });
+      return;
+    }
+
+    this.showPageLoading("保存中");
+    try {
+      const viewer = await this.app.request({
+        path: "/api/profile",
+        method: "POST",
+        data: {
+          displayName: this.data.profileDisplayName.trim(),
+          avatarUrl: this.data.profileAvatarUrl,
+        },
+      });
+      const fileUrlMap = await this.app.resolveFileUrls([
+        (viewer && viewer.avatarUrl) || this.data.profileAvatarUrl,
+      ]);
+      this.setData({
+        viewerLabel: (viewer && viewer.displayName) || this.data.profileDisplayName,
+        profileDisplayName:
+          (viewer && viewer.displayName) || this.data.profileDisplayName,
+        profileAvatarUrl: (viewer && viewer.avatarUrl) || this.data.profileAvatarUrl,
+        profileAvatarPreviewUrl:
+          ((viewer && viewer.avatarUrl) && fileUrlMap[viewer.avatarUrl]) ||
+          (viewer && viewer.avatarUrl) ||
+          this.data.profileAvatarPreviewUrl,
+        viewerAvatarPreviewUrl:
+          ((viewer && viewer.avatarUrl) && fileUrlMap[viewer.avatarUrl]) ||
+          (viewer && viewer.avatarUrl) ||
+          this.data.profileAvatarPreviewUrl,
+      });
+      this.hidePageLoading();
+      wx.showToast({
+        title: "资料已保存",
+        icon: "success",
+      });
+    } catch (error) {
+      this.hidePageLoading();
+      this.showError(error);
+    } finally {
+      this.hidePageLoading();
+    }
+  },
+
+  async requestOrderStatusSubscription() {
+    if (!this.data.orderNotificationEnabled || !this.data.orderSubscribeTemplateId) {
+      return;
+    }
+
+    try {
+      await wx.requestSubscribeMessage({
+        tmplIds: [this.data.orderSubscribeTemplateId],
+      });
+    } catch (error) {
+      console.warn("request order notification failed", error);
     }
   },
 
@@ -909,29 +1109,32 @@ Page({
       return;
     }
 
-    wx.showLoading({
-      title: "下单中",
-    });
+    this.showPageLoading("下单中");
     try {
+      await this.requestOrderStatusSubscription();
       await this.app.request({
         path: "/api/orders/batch",
         method: "POST",
         data: {
+          remark: this.data.orderRemark.trim(),
           entries,
         },
       });
       this.setData({
         slotSelections: {},
+        orderRemark: "",
       });
       await this.reloadPage();
+      this.hidePageLoading();
       wx.showToast({
         title: "下单成功",
         icon: "success",
       });
     } catch (error) {
+      this.hidePageLoading();
       this.showError(error);
     } finally {
-      wx.hideLoading();
+      this.hidePageLoading();
     }
   },
 
@@ -944,9 +1147,7 @@ Page({
         if (!result.confirm) {
           return;
         }
-        wx.showLoading({
-          title: "处理中",
-        });
+        this.showPageLoading("处理中");
         try {
           await this.app.request({
             path: "/api/orders/action",
@@ -957,14 +1158,16 @@ Page({
             },
           });
           await this.reloadPage();
+          this.hidePageLoading();
           wx.showToast({
             title: "已撤销",
             icon: "success",
           });
         } catch (error) {
+          this.hidePageLoading();
           this.showError(error);
         } finally {
-          wx.hideLoading();
+          this.hidePageLoading();
         }
       },
     });
@@ -974,6 +1177,12 @@ Page({
     const field = event.currentTarget.dataset.field;
     this.setData({
       [field]: event.detail.value,
+    });
+  },
+
+  onCategoryEnabledChange(event) {
+    this.setData({
+      categoryEnabled: !!event.detail.value,
     });
   },
 
@@ -1002,12 +1211,35 @@ Page({
     });
   },
 
-  async createCategory() {
-    if (!this.data.categoryName.trim()) {
-      wx.showToast({
-        title: "请填写分类名称",
-        icon: "none",
-      });
+  resetCategoryForm() {
+    this.setData({
+      categoryEditingId: 0,
+      categoryName: "",
+      categorySort: "10",
+      categoryEnabled: true,
+    });
+  },
+
+  startEditCategory(event) {
+    const categoryId = Number(event.currentTarget.dataset.categoryId);
+    const category = findCategory(this.data.menuCategories, categoryId);
+    if (!category) {
+      return;
+    }
+
+    this.setData({
+      categoryEditingId: category.id,
+      categoryName: category.name,
+      categorySort: `${category.sort || 10}`,
+      categoryEnabled: category.enabled !== false,
+    });
+  },
+
+  async onToggleCategoryStatus(event) {
+    const categoryId = Number(event.currentTarget.dataset.categoryId);
+    const nextEnabled = !!event.detail.value;
+    const category = findCategory(this.data.menuCategories, categoryId);
+    if (!category) {
       return;
     }
 
@@ -1017,20 +1249,50 @@ Page({
         method: "POST",
         admin: true,
         data: {
-          action: "create",
+          action: "update",
           category: {
-            name: this.data.categoryName.trim(),
-            sort: Number(this.data.categorySort || 10),
+            id: category.id,
+            name: category.name,
+            sort: category.sort,
+            enabled: nextEnabled,
           },
         },
       });
-      this.setData({
-        categoryName: "",
-        categorySort: "10",
+      await this.reloadPage();
+    } catch (error) {
+      this.showError(error);
+    }
+  },
+
+  async submitCategory() {
+    if (!this.data.categoryName.trim()) {
+      wx.showToast({
+        title: "请填写分类名称",
+        icon: "none",
       });
+      return;
+    }
+
+    try {
+      const isEditing = !!this.data.categoryEditingId;
+      await this.app.request({
+        path: "/api/admin/categories",
+        method: "POST",
+        admin: true,
+        data: {
+          action: isEditing ? "update" : "create",
+          category: {
+            id: this.data.categoryEditingId,
+            name: this.data.categoryName.trim(),
+            sort: Number(this.data.categorySort || 10),
+            enabled: this.data.categoryEnabled,
+          },
+        },
+      });
+      this.resetCategoryForm();
       await this.reloadPage();
       wx.showToast({
-        title: "分类已新增",
+        title: isEditing ? "分类已更新" : "分类已新增",
         icon: "success",
       });
     } catch (error) {
@@ -1038,7 +1300,82 @@ Page({
     }
   },
 
-  async createMenuItem() {
+  resetMenuForm() {
+    this.setData({
+      menuEditingId: 0,
+      menuName: "",
+      menuDescription: "",
+      menuImageUrl: "",
+      menuImagePreviewUrl: DEFAULT_GOODS_IMAGE,
+      menuPrice: "",
+      menuSort: "10",
+      menuMealSlots: [],
+      menuEnabled: true,
+      adminMealSlotChoices: buildAdminMealSlotChoices(this.data.mealSlots, []),
+    });
+  },
+
+  startEditMenuItem(event) {
+    const itemId = Number(event.currentTarget.dataset.itemId);
+    const menuItem = findMenuItem(this.data.menuCategories, itemId);
+    if (!menuItem) {
+      return;
+    }
+
+    const nextIndex = findCategoryIndex(
+      this.data.menuCategoryOptions,
+      menuItem.categoryId
+    );
+    const category = this.data.menuCategoryOptions[nextIndex] || null;
+
+    this.setData({
+      menuEditingId: menuItem.id,
+      menuName: menuItem.name,
+      menuDescription: menuItem.description,
+      menuImageUrl: menuItem.imageUrl || "",
+      menuImagePreviewUrl: menuItem.displayImageUrl || DEFAULT_GOODS_IMAGE,
+      menuPrice: `${menuItem.price}`,
+      menuSort: `${menuItem.sort || 10}`,
+      menuMealSlots: (menuItem.mealSlots || []).slice(),
+      menuEnabled: menuItem.enabled !== false,
+      menuCategoryIndex: nextIndex > -1 ? nextIndex : this.data.menuCategoryIndex,
+      selectedMenuCategoryName: category ? category.name : this.data.selectedMenuCategoryName,
+      adminMealSlotChoices: buildAdminMealSlotChoices(
+        this.data.mealSlots,
+        menuItem.mealSlots || []
+      ),
+    });
+  },
+
+  async onChooseMenuImage() {
+    try {
+      const response = await chooseImage();
+      const filePath = (response.tempFilePaths || [])[0];
+      if (!filePath) {
+        return;
+      }
+
+      this.showPageLoading("上传图片");
+      const fileID = await this.app.uploadFileToCloud({
+        filePath,
+        folder: "menu-images",
+      });
+      const fileUrlMap = await this.app.resolveFileUrls([fileID]);
+      this.setData({
+        menuImageUrl: fileID,
+        menuImagePreviewUrl: fileUrlMap[fileID] || filePath,
+      });
+    } catch (error) {
+      if (error && error.errMsg && error.errMsg.indexOf("cancel") > -1) {
+        return;
+      }
+      this.showError(error);
+    } finally {
+      this.hidePageLoading();
+    }
+  },
+
+  async submitMenuItem() {
     const category = this.data.menuCategoryOptions[this.data.menuCategoryIndex];
     if (!category) {
       wx.showToast({
@@ -1063,16 +1400,19 @@ Page({
     }
 
     try {
+      const isEditing = !!this.data.menuEditingId;
       await this.app.request({
         path: "/api/admin/menu-items",
         method: "POST",
         admin: true,
         data: {
-          action: "create",
+          action: isEditing ? "update" : "create",
           item: {
+            id: this.data.menuEditingId,
             categoryId: category.id,
             name: this.data.menuName.trim(),
             description: this.data.menuDescription.trim(),
+            imageUrl: this.data.menuImageUrl,
             price: Number(this.data.menuPrice || 0),
             sort: Number(this.data.menuSort || 10),
             enabled: this.data.menuEnabled,
@@ -1080,18 +1420,10 @@ Page({
           },
         },
       });
-      this.setData({
-        menuName: "",
-        menuDescription: "",
-        menuPrice: "",
-        menuSort: "10",
-        menuMealSlots: [],
-        menuEnabled: true,
-        adminMealSlotChoices: buildAdminMealSlotChoices(this.data.mealSlots, []),
-      });
+      this.resetMenuForm();
       await this.reloadPage();
       wx.showToast({
-        title: "菜品已新增",
+        title: isEditing ? "菜品已更新" : "菜品已新增",
         icon: "success",
       });
     } catch (error) {
@@ -1119,6 +1451,7 @@ Page({
             categoryId: menuItem.categoryId,
             name: menuItem.name,
             description: menuItem.description,
+            imageUrl: menuItem.imageUrl,
             price: menuItem.price,
             sort: menuItem.sort,
             enabled: nextEnabled,

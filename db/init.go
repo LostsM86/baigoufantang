@@ -55,6 +55,7 @@ func Init() error {
 		&model.CounterModel{},
 		&model.Category{},
 		&model.MenuItem{},
+		&model.UserProfile{},
 		&model.Order{},
 		&model.OrderItem{},
 		&model.WorkOrder{},

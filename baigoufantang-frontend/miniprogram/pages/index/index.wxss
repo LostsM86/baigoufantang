@@ -10,7 +10,7 @@ page {
 
 .brand {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   padding: 28rpx 28rpx 22rpx;
   border-radius: 30rpx 30rpx 20rpx 20rpx;
@@ -28,6 +28,14 @@ page {
 .brand__sub {
   font-size: 22rpx;
   color: rgba(53, 20, 14, 0.76);
+}
+
+.brand__avatar {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 50%;
+  border: 4rpx solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .login-card {
@@ -69,6 +77,74 @@ page {
   display: flex;
   gap: 16rpx;
   margin-top: 18rpx;
+}
+
+.profile-card {
+  margin-top: 20rpx;
+  padding: 24rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(180deg, #fffaf4 0%, #fff 100%);
+  box-shadow: 0 14rpx 30rpx rgba(34, 34, 34, 0.05);
+}
+
+.profile-card__head {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.profile-card__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20rpx;
+  margin-top: 18rpx;
+}
+
+.profile-card__avatar-btn {
+  width: 200rpx;
+  margin: 0;
+  padding: 18rpx 16rpx;
+  border: 0;
+  border-radius: 24rpx;
+  background: #f7f3ed;
+}
+
+.profile-card__avatar-btn::after {
+  border: 0;
+}
+
+.profile-card__avatar {
+  width: 120rpx;
+  height: 120rpx;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.profile-card__avatar-tip {
+  margin-top: 14rpx;
+  font-size: 22rpx;
+  color: #7b6655;
+  text-align: center;
+}
+
+.profile-card__form {
+  flex: 1 1 320rpx;
+  min-width: 0;
+}
+
+.profile-card__input {
+  margin-top: 0;
+}
+
+.profile-card__notice {
+  margin-top: 18rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 18rpx;
+  background: #fff7e8;
+  color: #8d735f;
+  font-size: 22rpx;
+  line-height: 1.6;
 }
 
 .topbar__tab {
@@ -239,8 +315,23 @@ page {
 }
 
 .dish-card {
+  display: flex;
+  gap: 20rpx;
   padding: 28rpx 24rpx;
   border-bottom: 2rpx solid #f5f0e8;
+}
+
+.dish-card__image {
+  width: 152rpx;
+  height: 152rpx;
+  border-radius: 22rpx;
+  flex: 0 0 auto;
+  background: #f4eee6;
+}
+
+.dish-card__main {
+  flex: 1;
+  min-width: 0;
 }
 
 .dish-card__title {
@@ -376,6 +467,15 @@ page {
   font-size: 24rpx;
 }
 
+.order-card__remark {
+  margin-top: 12rpx;
+  padding: 16rpx;
+  border-radius: 18rpx;
+  background: #f7f3ed;
+  color: #6c5b4d;
+  font-size: 24rpx;
+}
+
 .order-card__count {
   font-size: 24rpx;
   color: #8d8d8d;
@@ -456,6 +556,52 @@ page {
   margin-top: 18rpx;
 }
 
+.admin-card__head,
+.admin-row,
+.admin-row__actions,
+.admin-form-actions,
+.admin-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.admin-card__head {
+  flex-wrap: wrap;
+}
+
+.admin-badge {
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: #fff3dc;
+  color: #8b5a12;
+  font-size: 22rpx;
+}
+
+.admin-form-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.admin-image-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18rpx;
+  margin-top: 18rpx;
+}
+
+.admin-image-panel__preview,
+.admin-menu-item__image {
+  width: 108rpx;
+  height: 108rpx;
+  border-radius: 20rpx;
+  background: #f4eee6;
+  flex: 0 0 auto;
+}
+
 .admin-input,
 .admin-picker,
 .admin-textarea {
@@ -468,8 +614,26 @@ page {
   font-size: 28rpx;
 }
 
+.admin-input--half {
+  flex: 1 1 280rpx;
+  width: auto;
+  min-width: 0;
+}
+
 .admin-textarea {
   min-height: 150rpx;
+}
+
+.admin-switch-row {
+  margin-top: 16rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 20rpx;
+  background: #f7f3ed;
+}
+
+.admin-switch-row__label {
+  font-size: 26rpx;
+  color: #4d4036;
 }
 
 .admin-checkboxes {
@@ -477,6 +641,52 @@ page {
   flex-wrap: wrap;
   gap: 16rpx;
   margin-top: 18rpx;
+}
+
+.admin-form-actions {
+  flex-wrap: wrap;
+  margin-top: 18rpx;
+}
+
+.admin-button--flex {
+  flex: 1 1 220rpx;
+}
+
+.admin-list {
+  margin-top: 20rpx;
+}
+
+.admin-row {
+  flex-wrap: wrap;
+  padding: 18rpx 0;
+  border-bottom: 2rpx solid #f7f3ed;
+}
+
+.admin-row__main {
+  flex: 1 1 320rpx;
+  min-width: 0;
+}
+
+.admin-row__main--wide {
+  padding-right: 8rpx;
+}
+
+.admin-row__title {
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.admin-row__meta {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: #8d8d8d;
+}
+
+.admin-row__actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .admin-checkbox {
@@ -496,6 +706,8 @@ page {
 }
 
 .admin-menu-item {
+  flex-wrap: wrap;
+  align-items: flex-start;
   padding: 18rpx 0;
   border-bottom: 2rpx solid #f7f3ed;
 }
@@ -513,10 +725,16 @@ page {
 }
 
 .work-card__actions {
+  flex-wrap: wrap;
   margin-top: 18rpx;
 }
 
 .admin-button--mini {
   padding-left: 24rpx;
   padding-right: 24rpx;
+}
+
+.cart-remark {
+  margin-top: 18rpx;
+  min-height: 132rpx;
 }

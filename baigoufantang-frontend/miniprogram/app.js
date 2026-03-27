@@ -12,11 +12,61 @@ function getTimestamp(value) {
 function wxLogin() {
   return new Promise((resolve, reject) => {
     wx.login({
-      timeout: 10000,
       success: resolve,
       fail: reject,
     });
   });
+}
+
+function tryParseJSON(value) {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return value;
+  }
+}
+
+function normalizeResponsePayload(response) {
+  const candidates = [
+    response && response.data,
+    response && response.result,
+    response,
+  ];
+
+  for (let i = 0; i < candidates.length; i += 1) {
+    const parsed = tryParseJSON(candidates[i]);
+    if (!parsed) {
+      continue;
+    }
+
+    if (typeof parsed === "object") {
+      if (typeof parsed.code === "number") {
+        return parsed;
+      }
+
+      if (typeof parsed.body !== "undefined") {
+        const parsedBody = tryParseJSON(parsed.body);
+        if (parsedBody && typeof parsedBody === "object") {
+          return parsedBody;
+        }
+      }
+    }
+
+    if (typeof parsed === "string" && parsed.trim()) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function getFileExtension(filePath) {
+  const match = /(\.[a-zA-Z0-9]+)(?:\?|$)/.exec(filePath || "");
+  return match ? match[1] : "";
 }
 
 App({
@@ -34,6 +84,7 @@ App({
       sessionToken: wx.getStorageSync(SESSION_TOKEN_STORAGE_KEY) || "",
       sessionExpiresAt: wx.getStorageSync(SESSION_EXPIRES_AT_STORAGE_KEY) || "",
     };
+    this.fileUrlCache = {};
 
     if (wx.cloud && this.globalData.env) {
       wx.cloud.init({
@@ -111,7 +162,9 @@ App({
     });
 
     if (!response.sessionToken) {
-      throw new Error("服务端未返回登录会话");
+      throw new Error(
+        "登录接口返回格式异常，请确认前端已拿到最新返回值，且云托管部署的是最新后端"
+      );
     }
 
     this.globalData.sessionToken = response.sessionToken;
@@ -147,6 +200,78 @@ App({
       this.containerClientPromise = client.init().then(() => client);
     }
     return this.containerClientPromise;
+  },
+
+  canUseCloudFile() {
+    return !!(this.globalData.env && wx.cloud);
+  },
+
+  async uploadFileToCloud(options) {
+    const params = options || {};
+    const filePath = params.filePath || "";
+    const folder = params.folder || "uploads";
+
+    if (!filePath) {
+      throw new Error("缺少上传文件路径");
+    }
+    if (!this.canUseCloudFile()) {
+      throw new Error("当前环境未启用云开发，无法上传图片");
+    }
+
+    const ext = getFileExtension(filePath);
+    const cloudPath = `${folder}/${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 10)}${ext}`;
+    const response = await wx.cloud.uploadFile({
+      cloudPath,
+      filePath,
+    });
+
+    if (!response.fileID) {
+      throw new Error("图片上传失败");
+    }
+
+    return response.fileID;
+  },
+
+  async resolveFileUrls(fileIDs) {
+    const uniqueIDs = Array.from(
+      new Set((fileIDs || []).filter((item) => typeof item === "string" && item))
+    );
+    const result = {};
+
+    uniqueIDs.forEach((fileID) => {
+      if (!fileID.startsWith("cloud://")) {
+        result[fileID] = fileID;
+        return;
+      }
+      if (this.fileUrlCache[fileID]) {
+        result[fileID] = this.fileUrlCache[fileID];
+      }
+    });
+
+    const pending = uniqueIDs.filter(
+      (fileID) => fileID.startsWith("cloud://") && !result[fileID]
+    );
+
+    if (!pending.length) {
+      return result;
+    }
+    if (!this.canUseCloudFile()) {
+      return result;
+    }
+
+    const response = await wx.cloud.getTempFileURL({
+      fileList: pending,
+    });
+
+    (response.fileList || []).forEach((item) => {
+      const resolved = item.tempFileURL || item.fileID;
+      this.fileUrlCache[item.fileID] = resolved;
+      result[item.fileID] = resolved;
+    });
+
+    return result;
   },
 
   shouldRetryLogin(message) {
@@ -212,9 +337,16 @@ App({
       );
     }
 
-    const payload = response.data || response.result || response;
+    const payload = normalizeResponsePayload(response);
     if (!payload) {
       throw new Error("服务返回为空");
+    }
+
+    if (typeof payload === "string") {
+      if (payload.indexOf("<html") > -1 || payload.indexOf("<!DOCTYPE html") > -1) {
+        throw new Error("服务返回了页面内容，请确认云托管路径和服务部署是否正确");
+      }
+      throw new Error(`服务返回无法识别: ${payload.slice(0, 120)}`);
     }
 
     if (typeof payload.code === "number" && payload.code !== 0) {

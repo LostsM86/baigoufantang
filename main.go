@@ -17,6 +17,7 @@ func main() {
 	http.HandleFunc("/", service.IndexHandler)
 	http.HandleFunc("/api/count", service.CounterHandler)
 	http.HandleFunc("/api/wechat/login", service.WechatLoginHandler)
+	http.HandleFunc("/api/profile", service.ProfileHandler)
 	http.HandleFunc("/api/bootstrap", service.BootstrapHandler)
 	http.HandleFunc("/api/orders/batch", service.OrderBatchHandler)
 	http.HandleFunc("/api/orders/action", service.OrderActionHandler)

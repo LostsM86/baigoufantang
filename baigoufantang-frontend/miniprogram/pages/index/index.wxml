@@ -1,7 +1,10 @@
 <view class="page">
   <view class="brand">
-    <view class="brand__mark">白狗饭堂</view>
-    <view class="brand__sub">{{viewerLabel}}</view>
+    <view>
+      <view class="brand__mark">白狗饭堂</view>
+      <view class="brand__sub">{{viewerLabel}}</view>
+    </view>
+    <image class="brand__avatar" src="{{viewerAvatarPreviewUrl}}" mode="aspectFill"></image>
   </view>
 
   <view wx:if="{{!loggedIn}}" class="login-card">
@@ -20,6 +23,24 @@
   <view wx:if="{{loading}}" class="loading-state">正在准备菜单...</view>
 
   <block wx:elif="{{activeTab === 'booking'}}">
+    <view class="profile-card">
+      <view class="profile-card__head">
+        <view class="admin-card__title">我的资料</view>
+        <view class="admin-tip">昵称和头像会展示在订单和管理页面里，不再用 openid 尾号代替。</view>
+      </view>
+      <view class="profile-card__body">
+        <button class="profile-card__avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseProfileAvatar">
+          <image class="profile-card__avatar" src="{{profileAvatarPreviewUrl}}" mode="aspectFill"></image>
+          <view class="profile-card__avatar-tip">更换头像</view>
+        </button>
+        <view class="profile-card__form">
+          <input class="admin-input profile-card__input" type="nickname" placeholder="请输入昵称" value="{{profileDisplayName}}" data-field="profileDisplayName" bindinput="onInputChange" bindblur="onInputChange" />
+          <button class="minor-button" size="mini" bindtap="saveProfile">保存资料</button>
+        </view>
+      </view>
+      <view wx:if="{{orderNotificationEnabled}}" class="profile-card__notice">下单时会主动唤起一次“订单状态通知”订阅，管理员受理或驳回后会通知你。</view>
+    </view>
+
     <scroll-view class="date-scroll" scroll-x enable-flex show-scrollbar="{{false}}">
       <view class="date-scroll__inner">
         <block wx:for="{{dateTabs}}" wx:key="date" wx:for-item="item">
@@ -61,6 +82,7 @@
         <view wx:if="{{!currentCategoryItems.length}}" class="content-empty">选个日期和餐次，就能在这里看到商品。</view>
         <block wx:for="{{currentCategoryItems}}" wx:key="id" wx:for-item="dish">
           <view class="dish-card">
+            <image class="dish-card__image" src="{{dish.displayImageUrl}}" mode="aspectFill"></image>
             <view class="dish-card__main">
               <view class="dish-card__title">{{dish.name}}</view>
               <view class="dish-card__desc">{{dish.description}}</view>
@@ -94,6 +116,7 @@
           </block>
         </view>
       </block>
+      <textarea class="admin-textarea cart-remark" placeholder="备注给饭堂，例如少辣、晚点取餐" value="{{orderRemark}}" data-field="orderRemark" bindinput="onInputChange"></textarea>
     </view>
 
     <view class="orders-panel">
@@ -111,6 +134,7 @@
           <block wx:for="{{order.items}}" wx:key="id" wx:for-item="item">
             <view class="order-card__item">{{item.name}} x{{item.quantity}}</view>
           </block>
+          <view wx:if="{{order.remark}}" class="order-card__remark">备注：{{order.remark}}</view>
           <view wx:if="{{order.rejectReason}}" class="order-card__reject">驳回原因：{{order.rejectReason}}</view>
           <view class="order-card__foot">
             <view class="order-card__count">共 {{order.totalCount}} 份</view>
@@ -134,23 +158,61 @@
       <view class="admin-card">
         <view class="admin-card__title">管理员通知</view>
         <view class="admin-tip">{{adminNotificationEnabled ? '先点一次订阅，后续有新订单时，微信会向管理员推送订阅消息。' : '服务端还没完成通知配置，请先补齐 ADMIN_NOTIFY_* 环境变量。'}}</view>
+        <view class="admin-tip">设置顺序：先把管理员 openid 配进 ADMIN_OPENIDS，再配置订阅消息模板 ID 和模板关键词，最后让管理员本人点击下面的订阅按钮。</view>
         <button wx:if="{{adminNotificationEnabled}}" class="admin-button" bindtap="subscribeAdminNotifications">订阅新订单通知</button>
       </view>
 
       <view class="admin-card">
-        <view class="admin-card__title">新增分类</view>
-        <input class="admin-input" placeholder="分类名称" value="{{categoryName}}" data-field="categoryName" bindinput="onInputChange" />
-        <input class="admin-input" placeholder="排序" type="number" value="{{categorySort}}" data-field="categorySort" bindinput="onInputChange" />
-        <button class="admin-button" bindtap="createCategory">保存分类</button>
+        <view class="admin-card__head">
+          <view class="admin-card__title">{{categoryEditingId ? '编辑分类' : '分类管理'}}</view>
+          <view wx:if="{{categoryEditingId}}" class="admin-badge">编辑中</view>
+        </view>
+        <view class="admin-form-grid">
+          <input class="admin-input admin-input--half" placeholder="分类名称" value="{{categoryName}}" data-field="categoryName" bindinput="onInputChange" />
+          <input class="admin-input admin-input--half" placeholder="排序" type="number" value="{{categorySort}}" data-field="categorySort" bindinput="onInputChange" />
+        </view>
+        <view class="admin-switch-row">
+          <view class="admin-switch-row__label">分类启用</view>
+          <switch checked="{{categoryEnabled}}" color="#d61f26" bindchange="onCategoryEnabledChange" />
+        </view>
+        <view class="admin-form-actions">
+          <button class="admin-button admin-button--flex" bindtap="submitCategory">{{categoryEditingId ? '更新分类' : '新增分类'}}</button>
+          <button wx:if="{{categoryEditingId}}" class="minor-button admin-button--flex" bindtap="resetCategoryForm">取消编辑</button>
+        </view>
+
+        <view class="admin-list">
+          <block wx:for="{{menuCategories}}" wx:key="id" wx:for-item="category">
+            <view class="admin-row">
+              <view class="admin-row__main">
+                <view class="admin-row__title">{{category.name}}</view>
+                <view class="admin-row__meta">排序 {{category.sort || 10}} · {{category.enabled ? '启用中' : '已停用'}}</view>
+              </view>
+              <view class="admin-row__actions">
+                <button class="minor-button" size="mini" data-category-id="{{category.id}}" bindtap="startEditCategory">编辑</button>
+                <switch checked="{{category.enabled}}" color="#d61f26" data-category-id="{{category.id}}" bindchange="onToggleCategoryStatus" />
+              </view>
+            </view>
+          </block>
+        </view>
       </view>
 
       <view class="admin-card">
-        <view class="admin-card__title">新增菜品</view>
+        <view class="admin-card__head">
+          <view class="admin-card__title">{{menuEditingId ? '编辑菜品' : '菜品管理'}}</view>
+          <view wx:if="{{menuEditingId}}" class="admin-badge">编辑中</view>
+        </view>
+        <view class="admin-image-panel">
+          <image class="admin-image-panel__preview" src="{{menuImagePreviewUrl}}" mode="aspectFill"></image>
+          <button class="minor-button" bindtap="onChooseMenuImage">上传菜品图</button>
+        </view>
         <picker range="{{menuCategoryOptions}}" range-key="name" value="{{menuCategoryIndex}}" bindchange="onMenuCategoryChange">
           <view class="admin-picker">{{selectedMenuCategoryName}}</view>
         </picker>
-        <input class="admin-input" placeholder="菜品名称" value="{{menuName}}" data-field="menuName" bindinput="onInputChange" />
-        <input class="admin-input" placeholder="价格" type="digit" value="{{menuPrice}}" data-field="menuPrice" bindinput="onInputChange" />
+        <view class="admin-form-grid">
+          <input class="admin-input admin-input--half" placeholder="菜品名称" value="{{menuName}}" data-field="menuName" bindinput="onInputChange" />
+          <input class="admin-input admin-input--half" placeholder="价格" type="digit" value="{{menuPrice}}" data-field="menuPrice" bindinput="onInputChange" />
+          <input class="admin-input admin-input--half" placeholder="排序" type="number" value="{{menuSort}}" data-field="menuSort" bindinput="onInputChange" />
+        </view>
         <textarea class="admin-textarea" placeholder="菜品描述" value="{{menuDescription}}" data-field="menuDescription" bindinput="onInputChange"></textarea>
         <checkbox-group class="admin-checkboxes" bindchange="onMenuMealSlotsChange">
           <label class="admin-checkbox" wx:for="{{adminMealSlotChoices}}" wx:key="value" wx:for-item="slot">
@@ -158,25 +220,35 @@
             <text>{{slot.label}}</text>
           </label>
         </checkbox-group>
-        <button class="admin-button" bindtap="createMenuItem">保存菜品</button>
-      </view>
+        <view class="admin-switch-row">
+          <view class="admin-switch-row__label">菜品上架</view>
+          <switch checked="{{menuEnabled}}" color="#d61f26" bindchange="onMenuEnabledChange" />
+        </view>
+        <view class="admin-form-actions">
+          <button class="admin-button admin-button--flex" bindtap="submitMenuItem">{{menuEditingId ? '更新菜品' : '新增菜品'}}</button>
+          <button wx:if="{{menuEditingId}}" class="minor-button admin-button--flex" bindtap="resetMenuForm">取消编辑</button>
+        </view>
 
-      <view class="admin-card">
-        <view class="admin-card__title">菜单上下架</view>
+        <view class="admin-list">
         <block wx:for="{{menuCategories}}" wx:key="id" wx:for-item="category">
           <view class="admin-category">
             <view class="admin-category__title">{{category.name}}</view>
             <block wx:for="{{category.items}}" wx:key="id" wx:for-item="item">
               <view class="admin-menu-item">
-                <view>
+                <image class="admin-menu-item__image" src="{{item.displayImageUrl}}" mode="aspectFill"></image>
+                <view class="admin-row__main admin-row__main--wide">
                   <view class="admin-menu-item__name">{{item.name}}</view>
-                  <view class="admin-menu-item__meta">{{item.mealSlotText}}</view>
+                  <view class="admin-menu-item__meta">¥{{item.priceText}} · 排序 {{item.sort || 10}} · {{item.mealSlotText}}</view>
                 </view>
-                <switch checked="{{item.enabled}}" color="#d61f26" data-item-id="{{item.id}}" bindchange="onToggleMenuStatus" />
+                <view class="admin-row__actions">
+                  <button class="minor-button" size="mini" data-item-id="{{item.id}}" bindtap="startEditMenuItem">编辑</button>
+                  <switch checked="{{item.enabled}}" color="#d61f26" data-item-id="{{item.id}}" bindchange="onToggleMenuStatus" />
+                </view>
               </view>
             </block>
           </view>
         </block>
+        </view>
       </view>
 
       <view class="admin-card">
@@ -192,6 +264,7 @@
               <view class="status-tag status-tag--{{workOrder.status}}">{{workOrder.statusText}}</view>
             </view>
             <view class="work-card__detail">{{workOrder.detail}}</view>
+            <view wx:if="{{workOrder.remark}}" class="order-card__remark">备注：{{workOrder.remark}}</view>
             <block wx:for="{{workOrder.items}}" wx:key="id" wx:for-item="item">
               <view class="order-card__item">{{item.name}} x{{item.quantity}}</view>
             </block>

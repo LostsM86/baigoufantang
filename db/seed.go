@@ -89,6 +89,7 @@ func seedInitialData(database *gorm.DB) error {
 
 			updatePayload := map[string]interface{}{
 				"description": itemSeed.Description,
+				"image_url":   "",
 				"price":       itemSeed.Price,
 				"meal_slots":  string(mealSlotsPayload),
 				"sort":        itemSeed.Sort,
@@ -100,6 +101,7 @@ func seedInitialData(database *gorm.DB) error {
 					CategoryID:  category.ID,
 					Name:        itemSeed.Name,
 					Description: itemSeed.Description,
+					ImageURL:    "",
 					Price:       itemSeed.Price,
 					MealSlots:   string(mealSlotsPayload),
 					Sort:        itemSeed.Sort,
