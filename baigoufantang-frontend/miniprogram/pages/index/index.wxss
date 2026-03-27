@@ -425,6 +425,25 @@ page {
   margin-top: 18rpx;
 }
 
+.orders-page-tabs {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+
+.orders-page-tabs__item {
+  padding: 12rpx 18rpx;
+  border-radius: 999rpx;
+  background: #efe7dc;
+  color: #8d735f;
+  font-size: 22rpx;
+}
+
+.orders-page-tabs__item--active {
+  background: #1f1f1f;
+  color: #fff;
+}
+
 .orders-tabs__item {
   padding: 12rpx 18rpx;
   border-radius: 999rpx;
@@ -436,6 +455,22 @@ page {
 .orders-tabs__item--active {
   background: #d61f26;
   color: #fff;
+}
+
+.orders-panel__title--sub {
+  margin-top: 20rpx;
+}
+
+.wish-card {
+  margin-top: 18rpx;
+  padding: 22rpx;
+  border-radius: 24rpx;
+  background: #fff8f1;
+}
+
+.wish-card__title {
+  font-size: 28rpx;
+  font-weight: 700;
 }
 
 .cart-group {
@@ -534,6 +569,11 @@ page {
 .status-tag--rejected {
   background: #fff0f0;
   color: #b72b2b;
+}
+
+.status-tag--accepted {
+  background: #edf7ef;
+  color: #23834c;
 }
 
 .status-tag--cancelled {

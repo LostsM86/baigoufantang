@@ -279,6 +279,16 @@ func notifyAdminsForNewOrders(payloads []orderNotificationPayload) {
 	}
 }
 
+func notifyAdminsForDishRequest(payload orderNotificationPayload) {
+	if !adminNotificationEnabled() {
+		return
+	}
+
+	if err := sendTemplatedNotifications(adminOpenIDs(), "ADMIN_NOTIFY", payload); err != nil {
+		log.Printf("send admin dish-request notification failed: %v", err)
+	}
+}
+
 func notifyRequesterOrderStatus(requesterID string, payload orderNotificationPayload) {
 	requesterID = strings.TrimSpace(requesterID)
 	if requesterID == "" || !templateNotificationEnabled("ORDER_NOTIFY") {

@@ -22,11 +22,16 @@ const ORDER_RECORD_TABS = [
   { key: "recent", label: "最近10条" },
   { key: "all", label: "全部记录" },
 ];
+const ORDER_PAGE_TABS = [
+  { key: "records", label: "订单记录" },
+  { key: "wish", label: "想吃什么" },
+];
 const ADMIN_PANEL_TABS = [
   { key: "notice", label: "通知" },
   { key: "category", label: "分类" },
   { key: "menu", label: "菜品" },
   { key: "workorders", label: "工单" },
+  { key: "wishes", label: "想吃什么" },
 ];
 
 const DEFAULT_DATE_OPTIONS = buildNextSevenDays();
@@ -521,12 +526,17 @@ Page({
     cartTotalCount: 0,
     cartTotalAmountText: "0.00",
     orderRemark: "",
+    orderPageTab: "records",
+    orderPageTabs: ORDER_PAGE_TABS,
     orderRecordTab: "recent",
     orderRecordTabs: buildOrderRecordTabs("recent", 0),
     displayedOrders: [],
+    myDishRequests: [],
+    dishRequestName: "",
     canSubmit: false,
     myOrders: [],
     workOrders: [],
+    dishRequests: [],
     adminLoaded: false,
     adminPanel: "notice",
     adminPanelTabs: ADMIN_PANEL_TABS,
@@ -703,6 +713,7 @@ Page({
         selectedMealSlot,
         menuCategories: assetState.menuCategories,
         myOrders,
+        myDishRequests: response.myDishRequests || [],
         orderRecordTabs: buildOrderRecordTabs(
           this.data.orderRecordTab,
           myOrders.length
@@ -763,6 +774,7 @@ Page({
         this.data.menuMealSlots
       ),
       workOrders: buildWorkOrderCards(response.workOrders, mealSlotMap),
+      dishRequests: response.dishRequests || [],
     });
     this.refreshBookingView();
   },
@@ -969,9 +981,21 @@ Page({
     }
 
     try {
-      await wx.requestSubscribeMessage({
+      const result = await wx.requestSubscribeMessage({
         tmplIds: [this.data.orderSubscribeTemplateId],
       });
+      const subscribeStatus = result[this.data.orderSubscribeTemplateId];
+      if (subscribeStatus === "accept") {
+        wx.showToast({
+          title: "已订阅订单通知",
+          icon: "success",
+        });
+      } else if (subscribeStatus === "reject") {
+        wx.showToast({
+          title: "未订阅订单通知",
+          icon: "none",
+        });
+      }
     } catch (error) {
       console.warn("request order notification failed", error);
     }
@@ -1007,6 +1031,12 @@ Page({
   onSwitchAdminPanel(event) {
     this.setData({
       adminPanel: event.currentTarget.dataset.tab,
+    });
+  },
+
+  onSwitchOrderPageTab(event) {
+    this.setData({
+      orderPageTab: event.currentTarget.dataset.tab,
     });
   },
 
@@ -1171,6 +1201,42 @@ Page({
     });
 
     return entries;
+  },
+
+  async submitDishRequest() {
+    if (!this.data.dishRequestName.trim()) {
+      wx.showToast({
+        title: "请填写菜名",
+        icon: "none",
+      });
+      return;
+    }
+
+    this.showPageLoading("提交中");
+    try {
+      await this.app.request({
+        path: "/api/dish-requests",
+        method: "POST",
+        data: {
+          dishName: this.data.dishRequestName.trim(),
+        },
+      });
+      this.setData({
+        dishRequestName: "",
+        orderPageTab: "wish",
+      });
+      await this.reloadPage();
+      this.hidePageLoading();
+      wx.showToast({
+        title: "已提交给管理员",
+        icon: "success",
+      });
+    } catch (error) {
+      this.hidePageLoading();
+      this.showError(error);
+    } finally {
+      this.hidePageLoading();
+    }
   },
 
   async subscribeAdminNotifications() {
@@ -1584,6 +1650,31 @@ Page({
         },
       });
       await this.reloadPage();
+    } catch (error) {
+      this.showError(error);
+    }
+  },
+
+  async onHandleDishRequest(event) {
+    const requestId = Number(event.currentTarget.dataset.requestId);
+    const action = event.currentTarget.dataset.action;
+    const actionText = action === "accept" ? "采纳" : "忽略";
+
+    try {
+      await this.app.request({
+        path: "/api/admin/dish-requests/action",
+        method: "POST",
+        admin: true,
+        data: {
+          requestId,
+          action,
+        },
+      });
+      await this.reloadPage();
+      wx.showToast({
+        title: `${actionText}成功`,
+        icon: "success",
+      });
     } catch (error) {
       this.showError(error);
     }

@@ -27,6 +27,10 @@ const (
 	workOrderStatusProcessed = "processed"
 	workOrderStatusRejected  = "rejected"
 	workOrderStatusCancelled = "cancelled"
+
+	dishRequestStatusPending  = "pending"
+	dishRequestStatusAccepted = "accepted"
+	dishRequestStatusRejected = "rejected"
 )
 
 var mealSlots = []mealSlotOption{
@@ -64,6 +68,7 @@ type bootstrapResponse struct {
 	DateOptions       []dateOption          `json:"dateOptions"`
 	Categories        []categoryDTO         `json:"categories"`
 	MyOrders          []orderDTO            `json:"myOrders"`
+	MyDishRequests    []dishRequestDTO      `json:"myDishRequests"`
 }
 
 type adminBootstrapResponse struct {
@@ -71,6 +76,7 @@ type adminBootstrapResponse struct {
 	AdminNotification notificationConfigDTO `json:"adminNotification"`
 	Categories        []categoryDTO         `json:"categories"`
 	WorkOrders        []workOrderDTO        `json:"workOrders"`
+	DishRequests      []dishRequestDTO      `json:"dishRequests"`
 }
 
 type notificationConfigDTO struct {
@@ -131,6 +137,18 @@ type workOrderDTO struct {
 	Order     orderDTO  `json:"order"`
 }
 
+type dishRequestDTO struct {
+	ID            uint      `json:"id"`
+	RequesterID   string    `json:"requesterId"`
+	UserName      string    `json:"userName"`
+	DishName      string    `json:"dishName"`
+	Status        string    `json:"status"`
+	StatusText    string    `json:"statusText"`
+	AdminReply    string    `json:"adminReply"`
+	CreatedAt     time.Time `json:"createdAt"`
+	CreatedAtText string    `json:"createdAtText"`
+}
+
 type createBatchOrderRequest struct {
 	Remark  string             `json:"remark"`
 	Entries []createOrderEntry `json:"entries"`
@@ -145,6 +163,10 @@ type createOrderEntry struct {
 type createOrderEntryItem struct {
 	MenuItemID uint `json:"menuItemId"`
 	Quantity   int  `json:"quantity"`
+}
+
+type createDishRequestRequest struct {
+	DishName string `json:"dishName"`
 }
 
 type orderActionRequest struct {
@@ -187,6 +209,11 @@ type adminOrderActionRequest struct {
 	Reason  string `json:"reason"`
 }
 
+type adminDishRequestActionRequest struct {
+	RequestID uint   `json:"requestId"`
+	Action    string `json:"action"`
+}
+
 type saveProfileRequest struct {
 	DisplayName string `json:"displayName"`
 	AvatarURL   string `json:"avatarUrl"`
@@ -210,6 +237,11 @@ func BootstrapHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	dishRequests, err := listDishRequestsByRequester(requesterID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 
 	writeData(w, bootstrapResponse{
 		Viewer:            buildViewer(requesterID),
@@ -219,6 +251,7 @@ func BootstrapHandler(w http.ResponseWriter, r *http.Request) {
 		DateOptions:       buildNextSevenDays(),
 		Categories:        categories,
 		MyOrders:          orders,
+		MyDishRequests:    dishRequests,
 	})
 }
 
@@ -243,12 +276,18 @@ func AdminBootstrapHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	dishRequests, err := listAllDishRequests()
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 
 	writeData(w, adminBootstrapResponse{
 		Viewer:            buildViewer(requesterID),
 		AdminNotification: buildAdminNotificationConfig(requesterID),
 		Categories:        categories,
 		WorkOrders:        workOrders,
+		DishRequests:      dishRequests,
 	})
 }
 
@@ -295,6 +334,26 @@ func OrderBatchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeData(w, map[string]int{"createdCount": len(req.Entries)})
+}
+
+func DishRequestHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, fmt.Errorf("请求方法 %s 不支持", r.Method))
+		return
+	}
+
+	requesterID := getRequesterID(r)
+	var req createDishRequestRequest
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := createDishRequest(requesterID, req); err != nil {
+		writeError(w, err)
+		return
+	}
+
+	writeData(w, map[string]bool{"success": true})
 }
 
 func OrderActionHandler(w http.ResponseWriter, r *http.Request) {
@@ -376,6 +435,28 @@ func AdminOrderActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := reviewOrder(req); err != nil {
+		writeError(w, err)
+		return
+	}
+
+	writeData(w, map[string]bool{"success": true})
+}
+
+func AdminDishRequestActionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, fmt.Errorf("请求方法 %s 不支持", r.Method))
+		return
+	}
+	if !ensureAdmin(w, r) {
+		return
+	}
+
+	var req adminDishRequestActionRequest
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := handleDishRequestAction(req); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -635,6 +716,51 @@ func listWorkOrders() ([]workOrderDTO, error) {
 	return result, nil
 }
 
+func listDishRequestsByRequester(requesterID string) ([]dishRequestDTO, error) {
+	if strings.TrimSpace(requesterID) == "" {
+		return []dishRequestDTO{}, nil
+	}
+
+	var requests []model.DishRequest
+	if err := db.Get().
+		Where("requester_id = ?", requesterID).
+		Order("created_at DESC").
+		Order("id DESC").
+		Find(&requests).Error; err != nil {
+		return nil, err
+	}
+	return hydrateDishRequests(requests), nil
+}
+
+func listAllDishRequests() ([]dishRequestDTO, error) {
+	var requests []model.DishRequest
+	if err := db.Get().
+		Order("updated_at DESC").
+		Order("id DESC").
+		Find(&requests).Error; err != nil {
+		return nil, err
+	}
+	return hydrateDishRequests(requests), nil
+}
+
+func hydrateDishRequests(requests []model.DishRequest) []dishRequestDTO {
+	result := make([]dishRequestDTO, 0, len(requests))
+	for _, item := range requests {
+		result = append(result, dishRequestDTO{
+			ID:            item.ID,
+			RequesterID:   item.RequesterID,
+			UserName:      item.UserName,
+			DishName:      item.DishName,
+			Status:        item.Status,
+			StatusText:    dishRequestStatusText(item.Status),
+			AdminReply:    item.AdminReply,
+			CreatedAt:     item.CreatedAt,
+			CreatedAtText: item.CreatedAt.Format("2006-01-02 15:04"),
+		})
+	}
+	return result
+}
+
 func hydrateOrders(orders []model.Order) ([]orderDTO, error) {
 	orderIDs := make([]uint, 0, len(orders))
 	for _, order := range orders {
@@ -866,6 +992,42 @@ func createOrders(requesterID string, req createBatchOrderRequest) error {
 	return nil
 }
 
+func createDishRequest(requesterID string, req createDishRequestRequest) error {
+	requesterID = strings.TrimSpace(requesterID)
+	req.DishName = strings.TrimSpace(req.DishName)
+
+	if requesterID == "" {
+		return errors.New("未获取到微信身份，请重新进入小程序后再试")
+	}
+	if req.DishName == "" {
+		return errors.New("请填写菜名")
+	}
+	if len([]rune(req.DishName)) > 30 {
+		return errors.New("菜名不能超过 30 个字符")
+	}
+
+	requesterLabel := resolveRequesterDisplayName(requesterID)
+	record := model.DishRequest{
+		RequesterID: requesterID,
+		UserName:    requesterLabel,
+		DishName:    req.DishName,
+		Status:      dishRequestStatusPending,
+	}
+	if err := db.Get().Create(&record).Error; err != nil {
+		return err
+	}
+
+	notifyAdminsForDishRequest(orderNotificationPayload{
+		OrderNo:        fmt.Sprintf("WISH-%d", record.ID),
+		RequesterLabel: requesterLabel,
+		ItemSummary:    "想吃什么：" + req.DishName,
+		Remark:         "用户菜品建议",
+		ServeTime:      record.CreatedAt.Format("2006-01-02 15:04"),
+		CreatedAt:      record.CreatedAt,
+	})
+	return nil
+}
+
 func buildOrderItemSummary(items []createOrderEntryItem, menuItemsMap map[uint]model.MenuItem) string {
 	parts := make([]string, 0, len(items))
 	for _, item := range items {
@@ -917,6 +1079,30 @@ func handleOrderAction(requesterID string, req orderActionRequest) error {
 				"updated_at": time.Now(),
 			}).Error
 	})
+}
+
+func handleDishRequestAction(req adminDishRequestActionRequest) error {
+	if req.RequestID == 0 {
+		return errors.New("缺少 requestId")
+	}
+	if req.Action != "accept" && req.Action != "reject" {
+		return errors.New("当前仅支持 accept / reject")
+	}
+
+	status := dishRequestStatusAccepted
+	reply := "管理员已采纳，后续会评估是否加入菜单。"
+	if req.Action == "reject" {
+		status = dishRequestStatusRejected
+		reply = "管理员已查看，暂不安排。"
+	}
+
+	return db.Get().Model(&model.DishRequest{}).
+		Where("id = ?", req.RequestID).
+		Updates(map[string]interface{}{
+			"status":      status,
+			"admin_reply": reply,
+			"updated_at":  time.Now(),
+		}).Error
 }
 
 func reviewOrder(req adminOrderActionRequest) error {
@@ -1024,6 +1210,19 @@ func orderNotificationRemark(status, rejectReason string) string {
 		return strings.TrimSpace(rejectReason)
 	}
 	return "订单状态已更新，请进入小程序查看。"
+}
+
+func dishRequestStatusText(status string) string {
+	switch status {
+	case dishRequestStatusPending:
+		return "待处理"
+	case dishRequestStatusAccepted:
+		return "已采纳"
+	case dishRequestStatusRejected:
+		return "已忽略"
+	default:
+		return status
+	}
 }
 
 func saveCategory(req adminCategoryRequest) error {
