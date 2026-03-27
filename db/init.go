@@ -64,11 +64,6 @@ func Init() error {
 		return err
 	}
 
-	if err := seedInitialData(db); err != nil {
-		fmt.Println("DB Seed error,err=", err.Error())
-		return err
-	}
-
 	fmt.Println("finish init mysql with ", source)
 	return nil
 }

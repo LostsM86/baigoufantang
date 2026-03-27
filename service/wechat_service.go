@@ -331,6 +331,8 @@ func sendTemplatedNotifications(recipients []string, prefix string, payload orde
 		}
 		if err := postSubscribeMessage(accessToken, reqBody); err != nil {
 			errMessages = append(errMessages, fmt.Sprintf("%s: %v", openid, err))
+		} else {
+			log.Printf("send %s notification success for order %s to %s", prefix, payload.OrderNo, openid)
 		}
 	}
 

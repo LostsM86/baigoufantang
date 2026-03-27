@@ -18,6 +18,10 @@ const WORK_ORDER_STATUS_TEXT = {
   rejected: "已驳回",
   cancelled: "已撤销",
 };
+const ORDER_RECORD_TABS = [
+  { key: "recent", label: "最近10条" },
+  { key: "all", label: "全部记录" },
+];
 
 const DEFAULT_DATE_OPTIONS = buildNextSevenDays();
 const DEFAULT_SELECTED_DATE = DEFAULT_DATE_OPTIONS.length
@@ -397,6 +401,17 @@ function buildOrderCards(orderList, mealSlotMap) {
   });
 }
 
+function buildOrderRecordTabs(currentKey, totalCount) {
+  return ORDER_RECORD_TABS.map((item) => ({
+    key: item.key,
+    label:
+      item.key === "recent"
+        ? `${item.label}`
+        : `${item.label}${totalCount ? ` (${totalCount})` : ""}`,
+    active: item.key === currentKey,
+  }));
+}
+
 function buildWorkOrderCards(workOrders, mealSlotMap) {
   return (workOrders || []).map((workOrder) => {
     const order = workOrder.order || {};
@@ -459,6 +474,7 @@ Page({
     syncing: false,
     loginBusy: false,
     activeTab: "booking",
+    activeTabIndex: 0,
     loggedIn: false,
     loginError: "",
     viewerAvatarPreviewUrl: DEFAULT_AVATAR,
@@ -500,6 +516,9 @@ Page({
     cartTotalCount: 0,
     cartTotalAmountText: "0.00",
     orderRemark: "",
+    orderRecordTab: "recent",
+    orderRecordTabs: buildOrderRecordTabs("recent", 0),
+    displayedOrders: [],
     canSubmit: false,
     myOrders: [],
     workOrders: [],
@@ -677,6 +696,10 @@ Page({
         selectedMealSlot,
         menuCategories: assetState.menuCategories,
         myOrders,
+        orderRecordTabs: buildOrderRecordTabs(
+          this.data.orderRecordTab,
+          myOrders.length
+        ),
         menuCategoryOptions: categoryState.options,
         menuCategoryIndex: categoryState.selectedIndex,
         selectedMenuCategoryName: categoryState.selectedName,
@@ -690,6 +713,7 @@ Page({
       if (!this.data.isAdmin && this.data.activeTab === "admin") {
         this.setData({
           activeTab: "booking",
+          activeTabIndex: 0,
         });
       }
 
@@ -798,6 +822,14 @@ Page({
       cartSlotCount: cartState.cartSlotCount,
       cartTotalCount: cartState.cartTotalCount,
       cartTotalAmountText: cartState.cartTotalAmountText,
+      displayedOrders:
+        this.data.orderRecordTab === "recent"
+          ? this.data.myOrders.slice(0, 10)
+          : this.data.myOrders,
+      orderRecordTabs: buildOrderRecordTabs(
+        this.data.orderRecordTab,
+        this.data.myOrders.length
+      ),
       canSubmit: cartState.cartSlotCount > 0,
     });
   },
@@ -957,14 +989,63 @@ Page({
       return;
     }
 
-    this.setData({
-      activeTab: tab,
-    });
+    this.setActiveTab(tab);
 
     if (tab === "admin" && !this.data.adminLoaded) {
       this.reloadAdminData().catch((error) => {
         this.showError(error);
       });
+    }
+  },
+
+  setActiveTab(tab) {
+    const nextIndex = tab === "admin" && this.data.isAdmin ? 1 : 0;
+    this.setData({
+      activeTab: tab,
+      activeTabIndex: nextIndex,
+    });
+  },
+
+  onPageTouchStart(event) {
+    const touch = (event.touches || [])[0];
+    if (!touch) {
+      return;
+    }
+    this.swipeStartX = touch.clientX;
+    this.swipeStartY = touch.clientY;
+  },
+
+  onPageTouchEnd(event) {
+    if (!this.data.isAdmin) {
+      return;
+    }
+
+    const touch = (event.changedTouches || [])[0];
+    if (!touch || typeof this.swipeStartX !== "number") {
+      return;
+    }
+
+    const deltaX = touch.clientX - this.swipeStartX;
+    const deltaY = touch.clientY - this.swipeStartY;
+    this.swipeStartX = null;
+    this.swipeStartY = null;
+
+    if (Math.abs(deltaX) < 70 || Math.abs(deltaX) <= Math.abs(deltaY)) {
+      return;
+    }
+
+    if (deltaX < 0 && this.data.activeTab === "booking") {
+      this.setActiveTab("admin");
+      if (!this.data.adminLoaded) {
+        this.reloadAdminData().catch((error) => {
+          this.showError(error);
+        });
+      }
+      return;
+    }
+
+    if (deltaX > 0 && this.data.activeTab === "admin") {
+      this.setActiveTab("booking");
     }
   },
 
@@ -978,6 +1059,13 @@ Page({
   onSelectMealSlot(event) {
     this.setData({
       selectedMealSlot: event.currentTarget.dataset.mealSlot,
+    });
+    this.refreshBookingView();
+  },
+
+  onSwitchOrderRecordTab(event) {
+    this.setData({
+      orderRecordTab: event.currentTarget.dataset.tab,
     });
     this.refreshBookingView();
   },
@@ -1233,6 +1321,7 @@ Page({
       categorySort: `${category.sort || 10}`,
       categoryEnabled: category.enabled !== false,
     });
+    this.scrollToSelector("#admin-category-form");
   },
 
   async onToggleCategoryStatus(event) {
@@ -1345,6 +1434,16 @@ Page({
         menuItem.mealSlots || []
       ),
     });
+    this.scrollToSelector("#admin-menu-form");
+  },
+
+  scrollToSelector(selector) {
+    setTimeout(() => {
+      wx.pageScrollTo({
+        selector,
+        duration: 260,
+      });
+    }, 50);
   },
 
   async onChooseMenuImage() {

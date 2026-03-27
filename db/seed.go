@@ -14,42 +14,51 @@ type seedCategory struct {
 }
 
 type seedMenuItem struct {
-	Name        string
-	Description string
-	Price       float64
-	MealSlots   []string
-	Sort        int
+	CategoryName string
+	Name         string
+	Description  string
+	Price        float64
+	MealSlots    []string
+	Sort         int
 }
 
 func seedInitialData(database *gorm.DB) error {
 	categories := []seedCategory{
 		{
-			Name: "早餐",
+			Name: "小吃",
 			Sort: 10,
 			Items: []seedMenuItem{
-				{Name: "豆浆", Price: 0, MealSlots: []string{"breakfast"}, Sort: 10},
-				{Name: "香蕉奶昔", Price: 0, MealSlots: []string{"breakfast"}, Sort: 20},
-				{Name: "煎鸡蛋", Price: 0, MealSlots: []string{"breakfast"}, Sort: 30},
-				{Name: "清汤面", Price: 0, MealSlots: []string{"breakfast"}, Sort: 40},
+				{CategoryName: "小吃", Name: "煎鸡蛋", Price: 0, MealSlots: []string{"breakfast"}, Sort: 10},
+				{CategoryName: "小吃", Name: "焦香鸡翅", Price: 0, MealSlots: []string{"night_snack"}, Sort: 20},
 			},
 		},
 		{
 			Name: "正餐",
 			Sort: 20,
 			Items: []seedMenuItem{
-				{Name: "辣椒炒肉", Price: 0, MealSlots: []string{"lunch", "dinner"}, Sort: 10},
-				{Name: "炒蕨菜", Price: 0, MealSlots: []string{"lunch", "dinner"}, Sort: 20},
+				{CategoryName: "正餐", Name: "辣椒炒肉", Price: 0, MealSlots: []string{"lunch", "dinner"}, Sort: 10},
+				{CategoryName: "正餐", Name: "炒蕨菜", Price: 0, MealSlots: []string{"lunch", "dinner"}, Sort: 20},
 			},
 		},
 		{
-			Name: "夜宵",
+			Name: "主食",
 			Sort: 30,
 			Items: []seedMenuItem{
-				{Name: "焦香鸡翅", Price: 0, MealSlots: []string{"night_snack"}, Sort: 10},
+				{CategoryName: "主食", Name: "清汤面", Price: 0, MealSlots: []string{"breakfast"}, Sort: 10},
+				{CategoryName: "主食", Name: "米饭", Price: 0, MealSlots: []string{"lunch", "dinner"}, Sort: 20},
+			},
+		},
+		{
+			Name: "饮料",
+			Sort: 40,
+			Items: []seedMenuItem{
+				{CategoryName: "饮料", Name: "豆浆", Price: 0, MealSlots: []string{"breakfast"}, Sort: 10},
+				{CategoryName: "饮料", Name: "香蕉奶昔", Price: 0, MealSlots: []string{"breakfast"}, Sort: 20},
 			},
 		},
 	}
 
+	categoryMap := map[string]model.Category{}
 	for _, categorySeed := range categories {
 		category := model.Category{}
 		err := database.Where("name = ?", categorySeed.Name).First(&category).Error
@@ -74,10 +83,13 @@ func seedInitialData(database *gorm.DB) error {
 				return err
 			}
 		}
+		categoryMap[categorySeed.Name] = category
+	}
 
+	for _, categorySeed := range categories {
 		for _, itemSeed := range categorySeed.Items {
 			menuItem := model.MenuItem{}
-			err := database.Where("category_id = ? AND name = ?", category.ID, itemSeed.Name).First(&menuItem).Error
+			err := database.Where("name = ?", itemSeed.Name).First(&menuItem).Error
 			if err != nil && err != gorm.ErrRecordNotFound {
 				return err
 			}
@@ -88,6 +100,7 @@ func seedInitialData(database *gorm.DB) error {
 			}
 
 			updatePayload := map[string]interface{}{
+				"category_id": categoryMap[itemSeed.CategoryName].ID,
 				"description": itemSeed.Description,
 				"image_url":   "",
 				"price":       itemSeed.Price,
@@ -98,7 +111,7 @@ func seedInitialData(database *gorm.DB) error {
 
 			if err == gorm.ErrRecordNotFound {
 				menuItem = model.MenuItem{
-					CategoryID:  category.ID,
+					CategoryID:  categoryMap[itemSeed.CategoryName].ID,
 					Name:        itemSeed.Name,
 					Description: itemSeed.Description,
 					ImageURL:    "",
@@ -117,6 +130,12 @@ func seedInitialData(database *gorm.DB) error {
 				return err
 			}
 		}
+	}
+
+	if err := database.Model(&model.Category{}).
+		Where("name IN ?", []string{"早餐", "夜宵"}).
+		Updates(map[string]interface{}{"enabled": false}).Error; err != nil {
+		return err
 	}
 
 	return nil

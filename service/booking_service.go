@@ -950,6 +950,7 @@ func reviewOrder(req adminOrderActionRequest) error {
 			updateOrder["status"] = orderStatusApproved
 			updateWorkOrder["status"] = workOrderStatusProcessed
 			updateWorkOrder["detail"] = fmt.Sprintf("%s 已受理该预约订单。", order.OrderNo)
+			updateOrder["reject_reason"] = ""
 		} else {
 			reason := strings.TrimSpace(req.Reason)
 			if reason == "" {
@@ -1001,7 +1002,7 @@ func reviewOrder(req adminOrderActionRequest) error {
 			TotalQuantity:  totalQuantity,
 			Status:         order.Status,
 			StatusLabel:    orderStatusLabel(order.Status),
-			RejectReason:   order.RejectReason,
+			RejectReason:   orderNotificationRemark(order.Status, order.RejectReason),
 			CreatedAt:      order.CreatedAt,
 		}
 
@@ -1013,6 +1014,16 @@ func reviewOrder(req adminOrderActionRequest) error {
 
 	notifyRequesterOrderStatus(requesterID, notifyPayload)
 	return nil
+}
+
+func orderNotificationRemark(status, rejectReason string) string {
+	if status == orderStatusApproved {
+		return "订单已受理，请按时取餐。"
+	}
+	if strings.TrimSpace(rejectReason) != "" {
+		return strings.TrimSpace(rejectReason)
+	}
+	return "订单状态已更新，请进入小程序查看。"
 }
 
 func saveCategory(req adminCategoryRequest) error {
