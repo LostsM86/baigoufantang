@@ -1,119 +1,129 @@
-# wxcloudrun-golang
-[![GitHub license](https://img.shields.io/github/license/WeixinCloud/wxcloudrun-express)](https://github.com/WeixinCloud/wxcloudrun-express)
-![GitHub package.json dependency version (prod)](https://img.shields.io/badge/golang-1.17.1-green)
+# 白狗饭堂
 
-微信云托管 golang 模版，实现简单的计数器读写接口，使用云托管 MySQL 读写、记录计数值。
+这是一个基于微信小程序 + Go 后端的订餐示例，现在已经补齐了三条核心链路：
 
-![](https://qcloudimg.tencent-cloud.cn/raw/be22992d297d1b9a1a5365e606276781.png)
+- 用户通过微信 `wx.login` 登录，后端调用 `code2Session` 换取 `openid`
+- 小程序和后端都支持本地调试 / 云托管运行
+- 管理员可以在小程序里订阅新订单通知，用户下单后后端会调用微信订阅消息接口推送
 
+## 目录
 
-## 快速开始
-前往 [微信云托管快速开始页面](https://developers.weixin.qq.com/miniprogram/dev/wxcloudrun/src/basic/guide.html)，选择相应语言的模板，根据引导完成部署。
+- `main.go`：HTTP 入口
+- `service/booking_service.go`：菜单、下单、工单、管理员接口
+- `service/wechat_service.go`：微信登录、会话签名、订阅消息发送
+- `db/`：MySQL 初始化、模型、种子数据
+- `baigoufantang-frontend/`：微信小程序前端
 
-## 本地调试
-下载代码在本地调试，请参考[微信云托管本地调试指南](https://developers.weixin.qq.com/miniprogram/dev/wxcloudrun/src/guide/debug/)
+## 后端环境变量
 
-## 实时开发
-代码变动时，不需要重新构建和启动容器，即可查看变动后的效果。请参考[微信云托管实时开发指南](https://developers.weixin.qq.com/miniprogram/dev/wxcloudrun/src/guide/debug/dev.html)
+必须配置：
 
-## Dockerfile最佳实践
-请参考[如何提高项目构建效率](https://developers.weixin.qq.com/miniprogram/dev/wxcloudrun/src/scene/build/speed.html)
+- `MYSQL_ADDRESS`：MySQL 地址，例如 `127.0.0.1:3306`
+- `MYSQL_USERNAME`：MySQL 用户名
+- `MYSQL_PASSWORD`：MySQL 密码
+- `WECHAT_APP_ID`：小程序 AppID
+- `WECHAT_APP_SECRET`：小程序 AppSecret
 
-## 目录结构说明
-~~~
-.
-├── Dockerfile                Dockerfile 文件
-├── LICENSE                   LICENSE 文件
-├── README.md                 README 文件
-├── container.config.json     模板部署「服务设置」初始化配置（二开请忽略）
-├── db                        数据库逻辑目录
-├── go.mod                    go.mod 文件
-├── go.sum                    go.sum 文件
-├── index.html                主页 html 
-├── main.go                   主函数入口
-└── service                   接口服务逻辑目录
-~~~
+可选配置：
 
+- `MYSQL_DATABASE`：数据库名，默认 `golang_demo`
+- `PORT`：监听端口，默认 `80`
+- `SESSION_SECRET`：会话签名密钥；不填时回退到 `WECHAT_APP_SECRET`
+- `ADMIN_OPENIDS`：管理员微信 `openid`，多个逗号分隔
+- `ADMIN_TOKEN`：管理员接口兜底 token，不配置时默认 `baigoufantang-admin`
+- `ADMIN_NOTIFY_TEMPLATE_ID`：管理员新订单订阅消息模板 ID
+- `ADMIN_NOTIFY_PAGE`：点击通知后跳转的小程序页面，默认可填 `pages/index/index`
+- `ADMIN_NOTIFY_MINIPROGRAM_STATE`：消息跳转版本，默认 `formal`
+- `ADMIN_NOTIFY_LANG`：消息语言，默认 `zh_CN`
+- `ADMIN_NOTIFY_TEMPLATE_DATA`：订阅消息数据模板，JSON 字符串
 
-## 服务 API 文档
+## 本地启动后端
 
-### `GET /api/count`
+1. 准备 MySQL，并创建数据库。
+2. 参考 [`.env.example`](./.env.example) 填好环境变量。
+3. 本地启动：
 
-获取当前计数
+```bash
+PORT=8080 go run .
+```
 
-#### 请求参数
+如果你本地不用 root 权限，建议显式指定 `PORT=8080`。
 
-无
+## 小程序配置
 
-#### 响应结果
+小程序配置文件在 [`baigoufantang-frontend/miniprogram/app.js`](./baigoufantang-frontend/miniprogram/app.js)。
 
-- `code`：错误码
-- `data`：当前计数值
+云托管调试：
 
-##### 响应结果示例
+- 填写 `env`
+- 填写 `serviceName`
+
+本地联调：
+
+- 保持 `env` 为空
+- 把 `serviceBaseUrl` 改成 `http://127.0.0.1:8080`
+- 微信开发者工具里打开“不校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书”
+
+## 微信登录链路
+
+当前登录流程是：
+
+1. 小程序调用 `wx.login`
+2. 前端把 `code` 发到后端 `/api/wechat/login`
+3. 后端调用微信 `code2Session`
+4. 后端生成签名会话令牌，前端后续请求通过 `X-User-Session` 传递
+
+这样后端不再直接信任前端传来的裸 `openid`。
+
+## 管理员订单通知
+
+管理员通知依赖微信订阅消息，使用前需要同时完成这几步：
+
+1. 在微信公众平台为小程序添加一个“新订单通知”模板
+2. 把模板 ID 配到 `ADMIN_NOTIFY_TEMPLATE_ID`
+3. 把管理员的 `openid` 配到 `ADMIN_OPENIDS`
+4. 管理员本人进入小程序管理页，点击“订阅新订单通知”
+
+### `ADMIN_NOTIFY_TEMPLATE_DATA` 格式
+
+这个配置是一个 JSON，对应微信订阅消息接口里的 `data` 字段。值里支持以下占位符：
+
+- `{{order_no}}`
+- `{{meal_date}}`
+- `{{meal_slot}}`
+- `{{meal_label}}`
+- `{{requester_label}}`
+- `{{remark}}`
+- `{{item_summary}}`
+- `{{created_at}}`
+- `{{total_quantity}}`
+
+示例：
 
 ```json
 {
-  "code": 0,
-  "data": 42
+  "thing1": { "value": "白狗饭堂有新订单" },
+  "character_string2": { "value": "{{order_no}}" },
+  "thing3": { "value": "{{requester_label}}" },
+  "thing4": { "value": "{{meal_date}} {{meal_label}}" },
+  "thing5": { "value": "{{item_summary}}" }
 }
 ```
 
-#### 调用示例
+注意：这里的 `thing1`、`character_string2` 这类 key，必须和你在微信公众平台选用的订阅消息模板关键词完全一致。
 
-```
-curl https://<云托管服务域名>/api/count
-```
+## 已验证
 
+已在本地执行：
 
+- `go test ./...`
+- `go build ./...`
+- `node --check baigoufantang-frontend/miniprogram/app.js`
+- `node --check baigoufantang-frontend/miniprogram/pages/index/index.js`
 
-### `POST /api/count`
+## 微信官方文档
 
-更新计数，自增或者清零
-
-#### 请求参数
-
-- `action`：`string` 类型，枚举值
-  - 等于 `"inc"` 时，表示计数加一
-  - 等于 `"clear"` 时，表示计数重置（清零）
-
-##### 请求参数示例
-
-```
-{
-  "action": "inc"
-}
-```
-
-#### 响应结果
-
-- `code`：错误码
-- `data`：当前计数值
-
-##### 响应结果示例
-
-```json
-{
-  "code": 0,
-  "data": 42
-}
-```
-
-#### 调用示例
-
-```
-curl -X POST -H 'content-type: application/json' -d '{"action": "inc"}' https://<云托管服务域名>/api/count
-```
-
-## 使用注意
-如果不是通过微信云托管控制台部署模板代码，而是自行复制/下载模板代码后，手动新建一个服务并部署，需要在「服务设置」中补全以下环境变量，才可正常使用，否则会引发无法连接数据库，进而导致部署失败。
-- MYSQL_ADDRESS
-- MYSQL_PASSWORD
-- MYSQL_USERNAME
-以上三个变量的值请按实际情况填写。如果使用云托管内MySQL，可以在控制台MySQL页面获取相关信息。
-
-
-
-## License
-
-[MIT](./LICENSE)
+- `wx.login`：https://developers.weixin.qq.com/miniprogram/dev/api/open-api/login/wx.login.html
+- `code2Session`：https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/user-login/code2Session.html
+- `wx.requestSubscribeMessage`：https://developers.weixin.qq.com/miniprogram/dev/api/open-api/subscribe-message/wx.requestSubscribeMessage.html
+- 发送订阅消息：https://developers.weixin.qq.com/miniprogram/dev/server/API/mp-message-management/subscribe-message/api_sendmessage.html

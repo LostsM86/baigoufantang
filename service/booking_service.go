@@ -55,17 +55,24 @@ type viewerDTO struct {
 }
 
 type bootstrapResponse struct {
-	Viewer      viewerDTO        `json:"viewer"`
-	MealSlots   []mealSlotOption `json:"mealSlots"`
-	DateOptions []dateOption     `json:"dateOptions"`
-	Categories  []categoryDTO    `json:"categories"`
-	MyOrders    []orderDTO       `json:"myOrders"`
+	Viewer            viewerDTO            `json:"viewer"`
+	AdminNotification adminNotificationDTO `json:"adminNotification"`
+	MealSlots         []mealSlotOption     `json:"mealSlots"`
+	DateOptions       []dateOption         `json:"dateOptions"`
+	Categories        []categoryDTO        `json:"categories"`
+	MyOrders          []orderDTO           `json:"myOrders"`
 }
 
 type adminBootstrapResponse struct {
-	Viewer     viewerDTO      `json:"viewer"`
-	Categories []categoryDTO  `json:"categories"`
-	WorkOrders []workOrderDTO `json:"workOrders"`
+	Viewer            viewerDTO            `json:"viewer"`
+	AdminNotification adminNotificationDTO `json:"adminNotification"`
+	Categories        []categoryDTO        `json:"categories"`
+	WorkOrders        []workOrderDTO       `json:"workOrders"`
+}
+
+type adminNotificationDTO struct {
+	Enabled             bool   `json:"enabled"`
+	SubscribeTemplateID string `json:"subscribeTemplateId"`
 }
 
 type categoryDTO struct {
@@ -195,11 +202,12 @@ func BootstrapHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeData(w, bootstrapResponse{
-		Viewer:      buildViewer(requesterID),
-		MealSlots:   mealSlots,
-		DateOptions: buildNextSevenDays(),
-		Categories:  categories,
-		MyOrders:    orders,
+		Viewer:            buildViewer(requesterID),
+		AdminNotification: buildAdminNotificationConfig(requesterID),
+		MealSlots:         mealSlots,
+		DateOptions:       buildNextSevenDays(),
+		Categories:        categories,
+		MyOrders:          orders,
 	})
 }
 
@@ -226,9 +234,10 @@ func AdminBootstrapHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeData(w, adminBootstrapResponse{
-		Viewer:     buildViewer(requesterID),
-		Categories: categories,
-		WorkOrders: workOrders,
+		Viewer:            buildViewer(requesterID),
+		AdminNotification: buildAdminNotificationConfig(requesterID),
+		Categories:        categories,
+		WorkOrders:        workOrders,
 	})
 }
 
@@ -377,6 +386,14 @@ func buildViewer(requesterID string) viewerDTO {
 }
 
 func getRequesterID(r *http.Request) string {
+	sessionToken := strings.TrimSpace(r.Header.Get("X-User-Session"))
+	if sessionToken != "" {
+		requesterID, err := parseSessionToken(sessionToken)
+		if err == nil && requesterID != "" {
+			return requesterID
+		}
+	}
+
 	requesterID := strings.TrimSpace(r.Header.Get("X-User-Openid"))
 	if requesterID != "" {
 		return requesterID
@@ -710,7 +727,8 @@ func createOrders(requesterID string, req createBatchOrderRequest) error {
 		return err
 	}
 
-	return db.Get().Transaction(func(tx *gorm.DB) error {
+	notifications := make([]orderNotificationPayload, 0, len(req.Entries))
+	err = db.Get().Transaction(func(tx *gorm.DB) error {
 		for _, entry := range req.Entries {
 			var activeCount int64
 			if err := tx.Model(&model.Order{}).
@@ -723,6 +741,7 @@ func createOrders(requesterID string, req createBatchOrderRequest) error {
 			}
 
 			requesterLabel := buildRequesterLabel(requesterID)
+			createdAt := time.Now()
 			order := model.Order{
 				OrderNo:      generateOrderNo(),
 				RequesterID:  requesterID,
@@ -732,6 +751,8 @@ func createOrders(requesterID string, req createBatchOrderRequest) error {
 				MealSlot:     entry.MealSlot,
 				Status:       orderStatusPending,
 				Remark:       req.Remark,
+				CreatedAt:    createdAt,
+				UpdatedAt:    createdAt,
 			}
 			if err := tx.Create(&order).Error; err != nil {
 				return err
@@ -764,17 +785,49 @@ func createOrders(requesterID string, req createBatchOrderRequest) error {
 			}
 
 			workOrder := model.WorkOrder{
-				OrderID: order.ID,
-				Title:   fmt.Sprintf("新预约工单 · %s %s", entry.MealDate, mealLabel(entry.MealSlot)),
-				Detail:  fmt.Sprintf("%s 提交了 %s %s 预约，共 %d 份菜品。", requesterLabel, entry.MealDate, mealLabel(entry.MealSlot), totalQuantity),
-				Status:  workOrderStatusPending,
+				OrderID:   order.ID,
+				Title:     fmt.Sprintf("新预约工单 · %s %s", entry.MealDate, mealLabel(entry.MealSlot)),
+				Detail:    fmt.Sprintf("%s 提交了 %s %s 预约，共 %d 份菜品。", requesterLabel, entry.MealDate, mealLabel(entry.MealSlot), totalQuantity),
+				Status:    workOrderStatusPending,
+				CreatedAt: createdAt,
+				UpdatedAt: createdAt,
 			}
 			if err := tx.Create(&workOrder).Error; err != nil {
 				return err
 			}
+
+			notifications = append(notifications, orderNotificationPayload{
+				OrderNo:        order.OrderNo,
+				MealDate:       entry.MealDate,
+				MealSlot:       entry.MealSlot,
+				MealLabel:      mealLabel(entry.MealSlot),
+				RequesterLabel: requesterLabel,
+				Remark:         req.Remark,
+				ItemSummary:    buildOrderItemSummary(entry.Items, menuItemsMap),
+				TotalQuantity:  totalQuantity,
+				CreatedAt:      createdAt,
+			})
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	notifyAdminsForNewOrders(notifications)
+	return nil
+}
+
+func buildOrderItemSummary(items []createOrderEntryItem, menuItemsMap map[uint]model.MenuItem) string {
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		menuItem, ok := menuItemsMap[item.MenuItemID]
+		if !ok {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s x%d", menuItem.Name, item.Quantity))
+	}
+	return strings.Join(parts, "、")
 }
 
 func handleOrderAction(requesterID string, req orderActionRequest) error {

@@ -1,0 +1,207 @@
+<view class="page">
+  <view class="brand">
+    <view class="brand__mark">白狗饭堂</view>
+    <view class="brand__sub">{{viewerLabel}}</view>
+  </view>
+
+  <view wx:if="{{!loggedIn}}" class="login-card">
+    <view>
+      <view class="login-card__title">微信登录后可下单</view>
+      <view class="login-card__meta">{{loginError || '登录后会自动识别你的微信身份，并同步你的订单记录。'}}</view>
+    </view>
+    <button class="login-card__button" loading="{{loginBusy}}" bindtap="onTapLogin">微信登录</button>
+  </view>
+
+  <view class="topbar">
+    <view class="topbar__tab {{activeTab === 'booking' ? 'topbar__tab--active' : ''}}" data-tab="booking" bindtap="onSwitchTab">点餐</view>
+    <view wx:if="{{isAdmin}}" class="topbar__tab {{activeTab === 'admin' ? 'topbar__tab--active' : ''}}" data-tab="admin" bindtap="onSwitchTab">管理</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="loading-state">正在准备菜单...</view>
+
+  <block wx:elif="{{activeTab === 'booking'}}">
+    <scroll-view class="date-scroll" scroll-x enable-flex show-scrollbar="{{false}}">
+      <view class="date-scroll__inner">
+        <block wx:for="{{dateTabs}}" wx:key="date" wx:for-item="item">
+          <view class="date-chip {{item.selected ? 'date-chip--active' : ''}}" data-date="{{item.date}}" bindtap="onSelectDate">
+            <view class="date-chip__title">{{item.title}}</view>
+            <view class="date-chip__meta">{{item.weekday}}</view>
+            <view wx:if="{{item.cartCount}}" class="date-chip__badge">{{item.cartCount}}</view>
+          </view>
+        </block>
+      </view>
+    </scroll-view>
+
+    <view class="meal-row">
+      <block wx:for="{{mealTabs}}" wx:key="value" wx:for-item="item">
+        <view class="meal-pill {{item.selected ? 'meal-pill--active' : ''}}" data-meal-slot="{{item.value}}" bindtap="onSelectMealSlot">
+          <view class="meal-pill__title">{{item.label}}</view>
+          <view wx:if="{{item.cartCount}}" class="meal-pill__badge">{{item.cartCount}}</view>
+        </view>
+      </block>
+    </view>
+
+    <view class="slot-banner">
+      <view class="slot-banner__title">{{activeSlotLabel}}</view>
+      <view class="slot-banner__meta">先选时间，再从左侧分类挑菜</view>
+    </view>
+
+    <view class="menu-layout">
+      <scroll-view class="menu-layout__sidebar" scroll-y>
+        <view wx:if="{{!visibleCategories.length}}" class="sidebar-empty">该餐次暂无菜品</view>
+        <block wx:for="{{visibleCategories}}" wx:key="id" wx:for-item="category">
+          <view class="category-item {{category.id === activeCategoryId ? 'category-item--active' : ''}}" data-category-id="{{category.id}}" bindtap="onSelectCategory">
+            <view class="category-item__name">{{category.name}}</view>
+            <view wx:if="{{category.selectedCount}}" class="category-item__count">{{category.selectedCount}}</view>
+          </view>
+        </block>
+      </scroll-view>
+
+      <scroll-view class="menu-layout__content" scroll-y>
+        <view wx:if="{{!currentCategoryItems.length}}" class="content-empty">选个日期和餐次，就能在这里看到商品。</view>
+        <block wx:for="{{currentCategoryItems}}" wx:key="id" wx:for-item="dish">
+          <view class="dish-card">
+            <view class="dish-card__main">
+              <view class="dish-card__title">{{dish.name}}</view>
+              <view class="dish-card__desc">{{dish.description}}</view>
+              <view class="dish-card__footer">
+                <view class="dish-card__price">¥{{dish.priceText}}</view>
+                <view class="stepper">
+                  <view class="stepper__btn" data-item-id="{{dish.id}}" data-delta="-1" bindtap="onChangeDishQty">-</view>
+                  <view class="stepper__value">{{dish.quantity}}</view>
+                  <view class="stepper__btn stepper__btn--plus" data-item-id="{{dish.id}}" data-delta="1" bindtap="onChangeDishQty">+</view>
+                </view>
+              </view>
+            </view>
+          </view>
+        </block>
+      </scroll-view>
+    </view>
+
+    <view class="cart-panel" wx:if="{{cartGroups.length}}">
+      <view class="cart-panel__title">已选餐次</view>
+      <block wx:for="{{cartGroups}}" wx:key="slotKey" wx:for-item="group">
+        <view class="cart-group">
+          <view class="cart-group__head">
+            <view>
+              <view class="cart-group__title">{{group.mealDate}} {{group.mealSlotLabel}}</view>
+              <view class="cart-group__meta">共 {{group.totalCount}} 份</view>
+            </view>
+            <view class="cart-group__clear" data-slot-key="{{group.slotKey}}" bindtap="onClearCartGroup">清空</view>
+          </view>
+          <block wx:for="{{group.items}}" wx:key="id" wx:for-item="item">
+            <view class="cart-group__item">{{item.name}} x{{item.quantity}}</view>
+          </block>
+        </view>
+      </block>
+    </view>
+
+    <view class="orders-panel">
+      <view class="orders-panel__title">我的订单</view>
+      <view wx:if="{{!myOrders.length}}" class="content-empty">还没有订单，先点一份试试。</view>
+      <block wx:for="{{myOrders}}" wx:key="id" wx:for-item="order">
+        <view class="order-card">
+          <view class="order-card__head">
+            <view>
+              <view class="order-card__title">{{order.mealDate}} {{order.mealSlotLabel}}</view>
+              <view class="order-card__meta">{{order.orderNo}} · {{order.createdAtText}}</view>
+            </view>
+            <view class="status-tag status-tag--{{order.status}}">{{order.statusText}}</view>
+          </view>
+          <block wx:for="{{order.items}}" wx:key="id" wx:for-item="item">
+            <view class="order-card__item">{{item.name}} x{{item.quantity}}</view>
+          </block>
+          <view wx:if="{{order.rejectReason}}" class="order-card__reject">驳回原因：{{order.rejectReason}}</view>
+          <view class="order-card__foot">
+            <view class="order-card__count">共 {{order.totalCount}} 份</view>
+            <button wx:if="{{order.canCancel}}" class="minor-button" size="mini" data-order-id="{{order.id}}" bindtap="onCancelOrder">撤销</button>
+          </view>
+        </view>
+      </block>
+    </view>
+
+    <view class="checkout-bar">
+      <view class="checkout-bar__summary">
+        <view class="checkout-bar__title">已选 {{cartSlotCount}} 个餐次</view>
+        <view class="checkout-bar__meta">{{cartTotalCount}} 份菜品</view>
+      </view>
+      <button class="checkout-bar__button" disabled="{{syncing || (loggedIn && !canSubmit)}}" bindtap="onCheckoutTap">{{loggedIn ? '下单' : '微信登录'}}</button>
+    </view>
+  </block>
+
+  <block wx:elif="{{activeTab === 'admin'}}">
+    <view class="admin-section">
+      <view class="admin-card">
+        <view class="admin-card__title">管理员通知</view>
+        <view class="admin-tip">{{adminNotificationEnabled ? '先点一次订阅，后续有新订单时，微信会向管理员推送订阅消息。' : '服务端还没完成通知配置，请先补齐 ADMIN_NOTIFY_* 环境变量。'}}</view>
+        <button wx:if="{{adminNotificationEnabled}}" class="admin-button" bindtap="subscribeAdminNotifications">订阅新订单通知</button>
+      </view>
+
+      <view class="admin-card">
+        <view class="admin-card__title">新增分类</view>
+        <input class="admin-input" placeholder="分类名称" value="{{categoryName}}" data-field="categoryName" bindinput="onInputChange" />
+        <input class="admin-input" placeholder="排序" type="number" value="{{categorySort}}" data-field="categorySort" bindinput="onInputChange" />
+        <button class="admin-button" bindtap="createCategory">保存分类</button>
+      </view>
+
+      <view class="admin-card">
+        <view class="admin-card__title">新增菜品</view>
+        <picker range="{{menuCategoryOptions}}" range-key="name" value="{{menuCategoryIndex}}" bindchange="onMenuCategoryChange">
+          <view class="admin-picker">{{selectedMenuCategoryName}}</view>
+        </picker>
+        <input class="admin-input" placeholder="菜品名称" value="{{menuName}}" data-field="menuName" bindinput="onInputChange" />
+        <input class="admin-input" placeholder="价格" type="digit" value="{{menuPrice}}" data-field="menuPrice" bindinput="onInputChange" />
+        <textarea class="admin-textarea" placeholder="菜品描述" value="{{menuDescription}}" data-field="menuDescription" bindinput="onInputChange"></textarea>
+        <checkbox-group class="admin-checkboxes" bindchange="onMenuMealSlotsChange">
+          <label class="admin-checkbox" wx:for="{{adminMealSlotChoices}}" wx:key="value" wx:for-item="slot">
+            <checkbox value="{{slot.value}}" checked="{{slot.checked}}" color="#d61f26" />
+            <text>{{slot.label}}</text>
+          </label>
+        </checkbox-group>
+        <button class="admin-button" bindtap="createMenuItem">保存菜品</button>
+      </view>
+
+      <view class="admin-card">
+        <view class="admin-card__title">菜单上下架</view>
+        <block wx:for="{{menuCategories}}" wx:key="id" wx:for-item="category">
+          <view class="admin-category">
+            <view class="admin-category__title">{{category.name}}</view>
+            <block wx:for="{{category.items}}" wx:key="id" wx:for-item="item">
+              <view class="admin-menu-item">
+                <view>
+                  <view class="admin-menu-item__name">{{item.name}}</view>
+                  <view class="admin-menu-item__meta">{{item.mealSlotText}}</view>
+                </view>
+                <switch checked="{{item.enabled}}" color="#d61f26" data-item-id="{{item.id}}" bindchange="onToggleMenuStatus" />
+              </view>
+            </block>
+          </view>
+        </block>
+      </view>
+
+      <view class="admin-card">
+        <view class="admin-card__title">工单处理</view>
+        <view wx:if="{{!workOrders.length}}" class="content-empty">当前没有待处理工单。</view>
+        <block wx:for="{{workOrders}}" wx:key="id" wx:for-item="workOrder">
+          <view class="work-card">
+            <view class="order-card__head">
+              <view>
+                <view class="order-card__title">{{workOrder.mealDate}} {{workOrder.mealSlotLabel}}</view>
+                <view class="order-card__meta">{{workOrder.userName}} · {{workOrder.orderNo}}</view>
+              </view>
+              <view class="status-tag status-tag--{{workOrder.status}}">{{workOrder.statusText}}</view>
+            </view>
+            <view class="work-card__detail">{{workOrder.detail}}</view>
+            <block wx:for="{{workOrder.items}}" wx:key="id" wx:for-item="item">
+              <view class="order-card__item">{{item.name}} x{{item.quantity}}</view>
+            </block>
+            <view wx:if="{{workOrder.canReview}}" class="work-card__actions">
+              <button class="minor-button" size="mini" data-order-id="{{workOrder.orderId}}" data-action="reject" bindtap="onReviewWorkOrder">驳回</button>
+              <button class="admin-button admin-button--mini" size="mini" data-order-id="{{workOrder.orderId}}" data-action="approve" bindtap="onReviewWorkOrder">受理</button>
+            </view>
+          </view>
+        </block>
+      </view>
+    </view>
+  </block>
+</view>
