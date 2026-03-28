@@ -40,6 +40,8 @@ const DEFAULT_SELECTED_DATE = DEFAULT_DATE_OPTIONS.length
   : "";
 const DEFAULT_AVATAR = "/images/avatar.png";
 const DEFAULT_GOODS_IMAGE = "/images/default-goods-image.png";
+const HEADER_PULL_REFRESH_ZONE = 260;
+const HEADER_PULL_REFRESH_DISTANCE = 90;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value || {}));
@@ -109,6 +111,23 @@ function formatDateTime(value) {
 
 function formatMoney(value) {
   return Number(value || 0).toFixed(2);
+}
+
+function isSubscribeAccepted(status) {
+  return status === "accept" || status === "acceptWithRisk";
+}
+
+function subscribeStatusMessage(status) {
+  if (status === "reject") {
+    return "你已拒绝订阅";
+  }
+  if (status === "ban") {
+    return "通知模板已被封禁";
+  }
+  if (status === "filter") {
+    return "当前微信号暂时无法订阅";
+  }
+  return "订阅未生效";
 }
 
 function normalizeMealSlots(rawMealSlots) {
@@ -488,6 +507,7 @@ Page({
     loggedIn: false,
     loginError: "",
     viewerAvatarPreviewUrl: DEFAULT_AVATAR,
+    profilePanelOpen: false,
     profileDisplayName: "",
     profileAvatarUrl: "",
     profileAvatarPreviewUrl: DEFAULT_AVATAR,
@@ -522,6 +542,7 @@ Page({
     currentSlotSelectedCount: 0,
     slotSelections: {},
     cartGroups: [],
+    cartExpanded: false,
     cartSlotCount: 0,
     cartTotalCount: 0,
     cartTotalAmountText: "0.00",
@@ -622,10 +643,52 @@ Page({
   },
 
   onPullDownRefresh() {
-    this.reloadPage(true);
+    this.triggerPageRefresh({
+      nativePullDown: true,
+    });
   },
 
-  async reloadPage(stopRefresh) {
+  requestNativePageRefresh() {
+    if (this.refreshTask || this.pendingPullRefresh) {
+      return this.refreshTask || Promise.resolve();
+    }
+
+    if (typeof wx.startPullDownRefresh === "function") {
+      this.pendingPullRefresh = true;
+      wx.startPullDownRefresh();
+      return Promise.resolve();
+    }
+
+    return this.triggerPageRefresh();
+  },
+
+  triggerPageRefresh(options) {
+    const nativePullDown = !!(options && options.nativePullDown);
+    this.pendingPullRefresh = false;
+    if (this.refreshTask) {
+      if (nativePullDown) {
+        wx.stopPullDownRefresh();
+      }
+      return this.refreshTask;
+    }
+
+    this.setData({
+      cartExpanded: false,
+      profilePanelOpen: false,
+    });
+    wx.showNavigationBarLoading();
+    this.refreshTask = this.reloadPage().finally(() => {
+      this.pendingPullRefresh = false;
+      this.refreshTask = null;
+      wx.hideNavigationBarLoading();
+      if (nativePullDown) {
+        wx.stopPullDownRefresh();
+      }
+    });
+    return this.refreshTask;
+  },
+
+  async reloadPage() {
     try {
       await this.reloadBookingData();
       if (this.data.activeTab === "admin" && this.data.isAdmin) {
@@ -633,10 +696,6 @@ Page({
       }
     } catch (error) {
       this.showError(error);
-    } finally {
-      if (stopRefresh) {
-        wx.stopPullDownRefresh();
-      }
     }
   },
 
@@ -837,6 +896,7 @@ Page({
       currentCategoryItems,
       currentSlotSelectedCount,
       cartGroups: cartState.groups,
+      cartExpanded: cartState.groups.length ? this.data.cartExpanded : false,
       cartSlotCount: cartState.cartSlotCount,
       cartTotalCount: cartState.cartTotalCount,
       cartTotalAmountText: cartState.cartTotalAmountText,
@@ -949,6 +1009,7 @@ Page({
         (viewer && viewer.avatarUrl) || this.data.profileAvatarUrl,
       ]);
       this.setData({
+        profilePanelOpen: false,
         viewerLabel: (viewer && viewer.displayName) || this.data.profileDisplayName,
         profileDisplayName:
           (viewer && viewer.displayName) || this.data.profileDisplayName,
@@ -976,7 +1037,11 @@ Page({
   },
 
   async requestOrderStatusSubscription() {
-    if (!this.data.orderNotificationEnabled || !this.data.orderSubscribeTemplateId) {
+    if (
+      typeof wx.requestSubscribeMessage !== "function" ||
+      !this.data.orderNotificationEnabled ||
+      !this.data.orderSubscribeTemplateId
+    ) {
       return;
     }
 
@@ -985,14 +1050,14 @@ Page({
         tmplIds: [this.data.orderSubscribeTemplateId],
       });
       const subscribeStatus = result[this.data.orderSubscribeTemplateId];
-      if (subscribeStatus === "accept") {
+      if (isSubscribeAccepted(subscribeStatus)) {
         wx.showToast({
           title: "已订阅订单通知",
           icon: "success",
         });
-      } else if (subscribeStatus === "reject") {
+      } else if (subscribeStatus) {
         wx.showToast({
-          title: "未订阅订单通知",
+          title: subscribeStatusMessage(subscribeStatus),
           icon: "none",
         });
       }
@@ -1007,6 +1072,7 @@ Page({
       return;
     }
 
+    await this.requestOrderStatusSubscription();
     await this.submitBooking();
   },
 
@@ -1051,6 +1117,35 @@ Page({
   setActiveTab(tab) {
     this.setData({
       activeTab: tab,
+      cartExpanded: false,
+      profilePanelOpen: false,
+    });
+  },
+
+  toggleProfilePanel() {
+    this.setData({
+      profilePanelOpen: !this.data.profilePanelOpen,
+      cartExpanded: false,
+    });
+  },
+
+  toggleCartDrawer() {
+    if (!this.data.cartGroups.length) {
+      return;
+    }
+
+    this.setData({
+      cartExpanded: !this.data.cartExpanded,
+      profilePanelOpen: false,
+    });
+  },
+
+  closeCartDrawer() {
+    if (!this.data.cartExpanded) {
+      return;
+    }
+    this.setData({
+      cartExpanded: false,
     });
   },
 
@@ -1061,16 +1156,15 @@ Page({
     }
     this.swipeStartX = touch.clientX;
     this.swipeStartY = touch.clientY;
+    this.headerTouchCandidate = touch.clientY <= HEADER_PULL_REFRESH_ZONE;
   },
 
   onPageTouchEnd(event) {
-    const tabs = this.getAvailableTabs();
-    if (tabs.length < 2) {
-      return;
-    }
-
     const touch = (event.changedTouches || [])[0];
     if (!touch || typeof this.swipeStartX !== "number") {
+      this.swipeStartX = null;
+      this.swipeStartY = null;
+      this.headerTouchCandidate = false;
       return;
     }
 
@@ -1078,6 +1172,22 @@ Page({
     const deltaY = touch.clientY - this.swipeStartY;
     this.swipeStartX = null;
     this.swipeStartY = null;
+    const canTriggerHeaderRefresh =
+      this.headerTouchCandidate &&
+      deltaY > HEADER_PULL_REFRESH_DISTANCE &&
+      deltaY > Math.abs(deltaX) &&
+      !this.data.loading;
+    this.headerTouchCandidate = false;
+
+    if (canTriggerHeaderRefresh) {
+      this.requestNativePageRefresh();
+      return;
+    }
+
+    const tabs = this.getAvailableTabs();
+    if (tabs.length < 2) {
+      return;
+    }
 
     if (Math.abs(deltaX) < 70 || Math.abs(deltaX) <= Math.abs(deltaY)) {
       return;
@@ -1138,12 +1248,14 @@ Page({
   onChangeDishQty(event) {
     const itemId = Number(event.currentTarget.dataset.itemId);
     const delta = Number(event.currentTarget.dataset.delta || 0);
-    const slotKey = buildSlotKey(this.data.selectedDate, this.data.selectedMealSlot);
+    const slotKey =
+      event.currentTarget.dataset.slotKey ||
+      buildSlotKey(this.data.selectedDate, this.data.selectedMealSlot);
     const slotSelections = clone(this.data.slotSelections);
     const current =
       slotSelections[slotKey] || {
-        mealDate: this.data.selectedDate,
-        mealSlot: this.data.selectedMealSlot,
+        mealDate: event.currentTarget.dataset.mealDate || this.data.selectedDate,
+        mealSlot: event.currentTarget.dataset.mealSlot || this.data.selectedMealSlot,
         items: {},
       };
 
@@ -1240,6 +1352,14 @@ Page({
   },
 
   async subscribeAdminNotifications() {
+    if (typeof wx.requestSubscribeMessage !== "function") {
+      wx.showToast({
+        title: "当前基础库不支持订阅",
+        icon: "none",
+      });
+      return;
+    }
+
     if (!this.data.adminSubscribeTemplateId) {
       wx.showToast({
         title: "通知模板未配置",
@@ -1254,7 +1374,7 @@ Page({
       });
       const subscribeStatus = result[this.data.adminSubscribeTemplateId];
 
-      if (subscribeStatus === "accept") {
+      if (isSubscribeAccepted(subscribeStatus)) {
         wx.showToast({
           title: "已订阅通知",
           icon: "success",
@@ -1263,12 +1383,7 @@ Page({
       }
 
       wx.showToast({
-        title:
-          subscribeStatus === "reject"
-            ? "你已拒绝订阅"
-            : subscribeStatus === "ban"
-              ? "通知模板已被封禁"
-              : "订阅未生效",
+        title: subscribeStatusMessage(subscribeStatus),
         icon: "none",
       });
     } catch (error) {
@@ -1288,7 +1403,6 @@ Page({
 
     this.showPageLoading("下单中");
     try {
-      await this.requestOrderStatusSubscription();
       await this.app.request({
         path: "/api/orders/batch",
         method: "POST",
@@ -1298,6 +1412,7 @@ Page({
         },
       });
       this.setData({
+        cartExpanded: false,
         slotSelections: {},
         orderRemark: "",
       });
@@ -1494,6 +1609,32 @@ Page({
     });
   },
 
+  prefillMenuFormFromWish(wish) {
+    const nextIndex =
+      this.data.menuCategoryOptions.length &&
+      this.data.menuCategoryIndex < this.data.menuCategoryOptions.length
+        ? this.data.menuCategoryIndex
+        : 0;
+    const category = this.data.menuCategoryOptions[nextIndex] || null;
+
+    this.setData({
+      adminPanel: "menu",
+      menuEditingId: 0,
+      menuName: (wish && wish.dishName) || "",
+      menuDescription: "",
+      menuImageUrl: "",
+      menuImagePreviewUrl: DEFAULT_GOODS_IMAGE,
+      menuPrice: "",
+      menuSort: "10",
+      menuMealSlots: [],
+      menuEnabled: true,
+      menuCategoryIndex: category ? nextIndex : 0,
+      selectedMenuCategoryName: category ? category.name : "请先新增分类",
+      adminMealSlotChoices: buildAdminMealSlotChoices(this.data.mealSlots, []),
+    });
+    this.scrollToSelector("#admin-menu-form");
+  },
+
   startEditMenuItem(event) {
     const itemId = Number(event.currentTarget.dataset.itemId);
     const menuItem = findMenuItem(this.data.menuCategories, itemId);
@@ -1659,6 +1800,8 @@ Page({
     const requestId = Number(event.currentTarget.dataset.requestId);
     const action = event.currentTarget.dataset.action;
     const actionText = action === "accept" ? "采纳" : "忽略";
+    const wish =
+      this.data.dishRequests.find((item) => Number(item.id) === requestId) || null;
 
     try {
       await this.app.request({
@@ -1671,8 +1814,12 @@ Page({
         },
       });
       await this.reloadPage();
+      if (action === "accept") {
+        this.prefillMenuFormFromWish(wish);
+      }
       wx.showToast({
-        title: `${actionText}成功`,
+        title:
+          action === "accept" ? "已采纳，请补充菜品信息" : `${actionText}成功`,
         icon: "success",
       });
     } catch (error) {

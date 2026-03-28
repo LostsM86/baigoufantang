@@ -1017,14 +1017,6 @@ func createDishRequest(requesterID string, req createDishRequestRequest) error {
 		return err
 	}
 
-	notifyAdminsForDishRequest(orderNotificationPayload{
-		OrderNo:        fmt.Sprintf("WISH-%d", record.ID),
-		RequesterLabel: requesterLabel,
-		ItemSummary:    "想吃什么：" + req.DishName,
-		Remark:         "用户菜品建议",
-		ServeTime:      record.CreatedAt.Format("2006-01-02 15:04"),
-		CreatedAt:      record.CreatedAt,
-	})
 	return nil
 }
 

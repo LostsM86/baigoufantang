@@ -1,10 +1,33 @@
 <view class="page" bindtouchstart="onPageTouchStart" bindtouchend="onPageTouchEnd">
   <view class="brand">
-    <view>
+    <view class="brand__main">
       <view class="brand__mark">白狗饭堂</view>
       <view class="brand__sub">{{viewerLabel}}</view>
     </view>
-    <image class="brand__avatar" src="{{viewerAvatarPreviewUrl}}" mode="aspectFill"></image>
+    <view class="brand-profile {{profilePanelOpen ? 'brand-profile--active' : ''}}" bindtap="toggleProfilePanel">
+      <view class="brand-profile__text">
+        <view class="brand-profile__label">我的资料</view>
+        <view class="brand-profile__name">{{profileDisplayName || viewerLabel}}</view>
+      </view>
+      <image class="brand-profile__avatar" src="{{profileAvatarPreviewUrl}}" mode="aspectFill"></image>
+    </view>
+  </view>
+
+  <view wx:if="{{profilePanelOpen}}" class="profile-popover">
+    <view class="profile-popover__head">
+      <view class="profile-popover__title">我的资料</view>
+      <view class="profile-popover__action" bindtap="toggleProfilePanel">收起</view>
+    </view>
+    <view class="profile-popover__body">
+      <button class="profile-popover__avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseProfileAvatar">
+        <image class="profile-popover__avatar" src="{{profileAvatarPreviewUrl}}" mode="aspectFill"></image>
+      </button>
+      <view class="profile-popover__fields">
+        <input class="profile-popover__input" placeholder="输入昵称，用于订单展示" value="{{profileDisplayName}}" data-field="profileDisplayName" bindinput="onInputChange" bindblur="onInputChange" />
+        <view wx:if="{{orderNotificationEnabled}}" class="profile-popover__notice">下单时会请求一次订单状态通知订阅。</view>
+      </view>
+      <button class="admin-button profile-popover__save" bindtap="saveProfile">保存</button>
+    </view>
   </view>
 
   <view wx:if="{{!loggedIn}}" class="login-card">
@@ -21,23 +44,11 @@
     <view wx:if="{{isAdmin}}" class="topbar__tab {{activeTab === 'admin' ? 'topbar__tab--active' : ''}}" data-tab="admin" bindtap="onSwitchTab">管理</view>
   </view>
 
-  <view wx:if="{{loggedIn}}" class="swipe-tip">左右滑动可切换页面</view>
+  <view class="swipe-tip">{{loggedIn ? '左右滑动可切换页面，顶部下拉可刷新内容' : '顶部下拉可刷新最新菜单'}}</view>
 
   <view wx:if="{{loading}}" class="loading-state">正在准备菜单...</view>
 
   <block wx:elif="{{activeTab === 'booking'}}">
-    <view class="profile-bar">
-      <button class="profile-bar__avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseProfileAvatar">
-        <image class="profile-bar__avatar" src="{{profileAvatarPreviewUrl}}" mode="aspectFill"></image>
-      </button>
-      <view class="profile-bar__main">
-        <input class="profile-bar__input" placeholder="输入昵称，用于订单展示" value="{{profileDisplayName}}" data-field="profileDisplayName" bindinput="onInputChange" bindblur="onInputChange" />
-      </view>
-      <button class="admin-button profile-bar__save" bindtap="saveProfile">保存</button>
-    </view>
-
-    <view wx:if="{{orderNotificationEnabled}}" class="profile-bar__notice">下单时会请求一次订单状态通知订阅。</view>
-
     <scroll-view class="date-scroll" scroll-x enable-flex show-scrollbar="{{false}}">
       <view class="date-scroll__inner">
         <block wx:for="{{dateTabs}}" wx:key="date" wx:for-item="item">
@@ -97,29 +108,52 @@
       </scroll-view>
     </view>
 
-    <view class="cart-panel" wx:if="{{cartGroups.length}}">
-      <view class="cart-panel__title">已选餐次</view>
-      <block wx:for="{{cartGroups}}" wx:key="slotKey" wx:for-item="group">
-        <view class="cart-group">
-          <view class="cart-group__head">
-            <view>
-              <view class="cart-group__title">{{group.mealDate}} {{group.mealSlotLabel}}</view>
-              <view class="cart-group__meta">共 {{group.totalCount}} 份</view>
-            </view>
-            <view class="cart-group__clear" data-slot-key="{{group.slotKey}}" bindtap="onClearCartGroup">清空</view>
-          </view>
-          <block wx:for="{{group.items}}" wx:key="id" wx:for-item="item">
-            <view class="cart-group__item">{{item.name}} x{{item.quantity}}</view>
-          </block>
-        </view>
-      </block>
-      <textarea class="admin-textarea cart-remark" placeholder="备注给饭堂，例如少辣、晚点取餐" value="{{orderRemark}}" data-field="orderRemark" bindinput="onInputChange"></textarea>
-    </view>
-
     <view class="checkout-bar">
-      <view class="checkout-bar__summary">
-        <view class="checkout-bar__title">已选 {{cartSlotCount}} 个餐次</view>
-        <view class="checkout-bar__meta">{{cartTotalCount}} 份菜品</view>
+      <view class="checkout-bar__left">
+        <view class="checkout-cart">
+          <view class="checkout-cart__trigger {{!cartGroups.length ? 'checkout-cart__trigger--disabled' : ''}}" bindtap="toggleCartDrawer">
+            <view class="checkout-cart__icon">购</view>
+            <view class="checkout-cart__summary">
+              <view class="checkout-cart__label">购物车</view>
+              <view class="checkout-cart__count">{{cartTotalCount}} 份</view>
+            </view>
+          </view>
+          <view wx:if="{{cartExpanded && cartGroups.length}}" class="checkout-cart__panel">
+            <view class="checkout-cart__panel-head">
+              <view class="checkout-cart__panel-title">购物车</view>
+              <view class="checkout-cart__panel-action" bindtap="closeCartDrawer">关闭</view>
+            </view>
+            <block wx:for="{{cartGroups}}" wx:key="slotKey" wx:for-item="group">
+              <view class="checkout-cart__group">
+                <view class="checkout-cart__group-head">
+                  <view>
+                    <view class="checkout-cart__group-title">{{group.mealDate}} {{group.mealSlotLabel}}</view>
+                    <view class="checkout-cart__group-meta">{{group.totalCount}} 份 · ¥{{group.totalAmountText}}</view>
+                  </view>
+                  <view class="checkout-cart__group-clear" data-slot-key="{{group.slotKey}}" bindtap="onClearCartGroup">清空</view>
+                </view>
+                <block wx:for="{{group.items}}" wx:key="id" wx:for-item="item">
+                  <view class="checkout-cart__item">
+                    <view class="checkout-cart__item-main">
+                      <view class="checkout-cart__item-name">{{item.name}}</view>
+                      <view class="checkout-cart__item-price">¥{{item.amountText}}</view>
+                    </view>
+                    <view class="stepper checkout-cart__stepper">
+                      <view class="stepper__btn checkout-cart__stepper-btn" data-slot-key="{{group.slotKey}}" data-meal-date="{{group.mealDate}}" data-meal-slot="{{group.mealSlot}}" data-item-id="{{item.id}}" data-delta="-1" bindtap="onChangeDishQty">-</view>
+                      <view class="stepper__value">{{item.quantity}}</view>
+                      <view class="stepper__btn stepper__btn--plus checkout-cart__stepper-btn" data-slot-key="{{group.slotKey}}" data-meal-date="{{group.mealDate}}" data-meal-slot="{{group.mealSlot}}" data-item-id="{{item.id}}" data-delta="1" bindtap="onChangeDishQty">+</view>
+                    </view>
+                  </view>
+                </block>
+              </view>
+            </block>
+            <textarea class="admin-textarea checkout-cart__remark" placeholder="备注给饭堂，例如少辣、晚点取餐" value="{{orderRemark}}" data-field="orderRemark" bindinput="onInputChange"></textarea>
+          </view>
+        </view>
+        <view class="checkout-bar__summary">
+          <view class="checkout-bar__title">已选 {{cartSlotCount}} 个餐次</view>
+          <view class="checkout-bar__meta">{{cartTotalCount}} 份菜品 · ¥{{cartTotalAmountText}}</view>
+        </view>
       </view>
       <button class="checkout-bar__button" disabled="{{syncing || (loggedIn && !canSubmit)}}" bindtap="onCheckoutTap">{{loggedIn ? '下单' : '微信登录'}}</button>
     </view>

@@ -272,20 +272,9 @@ func notifyAdminsForNewOrders(payloads []orderNotificationPayload) {
 		return
 	}
 
-	for _, payload := range payloads {
-		if err := sendTemplatedNotifications(adminOpenIDs(), "ADMIN_NOTIFY", payload); err != nil {
-			log.Printf("send admin notification failed for order %s: %v", payload.OrderNo, err)
-		}
-	}
-}
-
-func notifyAdminsForDishRequest(payload orderNotificationPayload) {
-	if !adminNotificationEnabled() {
-		return
-	}
-
+	payload := mergeAdminOrderNotifications(payloads)
 	if err := sendTemplatedNotifications(adminOpenIDs(), "ADMIN_NOTIFY", payload); err != nil {
-		log.Printf("send admin dish-request notification failed: %v", err)
+		log.Printf("send admin notification failed for order %s: %v", payload.OrderNo, err)
 	}
 }
 
@@ -298,6 +287,28 @@ func notifyRequesterOrderStatus(requesterID string, payload orderNotificationPay
 	if err := sendTemplatedNotifications([]string{requesterID}, "ORDER_NOTIFY", payload); err != nil {
 		log.Printf("send requester notification failed for order %s: %v", payload.OrderNo, err)
 	}
+}
+
+func mergeAdminOrderNotifications(payloads []orderNotificationPayload) orderNotificationPayload {
+	if len(payloads) == 0 {
+		return orderNotificationPayload{}
+	}
+	if len(payloads) == 1 {
+		return payloads[0]
+	}
+
+	summary := payloads[0]
+	totalQuantity := 0
+
+	for _, payload := range payloads {
+		totalQuantity += payload.TotalQuantity
+	}
+
+	summary.TotalQuantity = totalQuantity
+	summary.ItemSummary = fmt.Sprintf("%d个餐次，%d份菜品", len(payloads), totalQuantity)
+	summary.Remark = "批量下单，请进小程序查看"
+
+	return summary
 }
 
 func sendTemplatedNotifications(recipients []string, prefix string, payload orderNotificationPayload) error {
